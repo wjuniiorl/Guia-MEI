@@ -15,14 +15,6 @@ A tela de identificação do PGMEI é protegida por **hCaptcha invisível** que
 vezes sem nem exibir um desafio, apenas recusando:
 *"Impedido por proteção Captcha. Comportamento de Robô"*.
 
-> **Por que um perfil "novo" é bloqueado:** o hCaptcha confia mais em
-> navegadores com histórico/cookies (o seu Chrome do dia a dia passa liso). Um
-> perfil zerado é tratado como robô. Por isso, na **1ª execução**, a ferramenta
-> **copia uma cópia do seu perfil real do Chrome** (cookies e histórico — nunca
-> senhas) para a pasta dela. **Feche todas as janelas do Chrome antes da 1ª
-> execução** para a cópia funcionar. Se o captcha voltar a bloquear depois de um
-> tempo, rode com `--novo-perfil` para recopiar.
-
 Por isso o **modo padrão é `chrome`**, que separa o processo em **duas fases**:
 
 **Fase 1 — Identificação (você, manual):** a ferramenta apenas **abre o seu
@@ -36,8 +28,14 @@ Guia de Pagamento (DAS)"**, volte ao terminal e tecle **ENTER**. Só então a
 automação **se conecta** ao navegador e faz o resto sozinha: escolhe o ano,
 marca o mês, gera e baixa o PDF. Essas telas **não têm captcha**.
 
-Um **perfil dedicado** (`.perfil-chromium/chrome-real`) guarda os cookies, o que
-costuma **manter você identificado** por um tempo nas próximas execuções.
+A ferramenta usa um **perfil dedicado e limpo** (`.perfil-chromium/chrome-real`),
+separado do seu Chrome pessoal. Esse perfil passa normalmente no hCaptcha (um
+navegador limpo é tratado como legítimo). Se algo travar, use `--novo-perfil`
+para recomeçar o perfil do zero.
+
+> **Detalhe técnico:** a abertura do navegador **não** usa nenhuma flag de
+> automação (`--enable-automation`) e a automação só **se conecta** na fase 2,
+> depois da identificação — por isso o hCaptcha não detecta robô.
 
 ### Modos disponíveis (`--modo`)
 
@@ -77,9 +75,10 @@ Opções:
 | `--cnpj`, `-c` | CNPJ (com ou sem formatação) **[obrigatório]**       |
 | `--ano`, `-a`  | Ano-calendário, ex.: `2026` **[obrigatório]**        |
 | `--mes`, `-m`  | Mês de apuração, `1`..`12` **[obrigatório]**         |
-| `--out`, `-o`  | Diretório de saída (padrão: `./downloads`)           |
-| `--modo`       | `chrome` (padrão), `headless`, `headful`             |
-| `--help`, `-h` | Ajuda                                                |
+| `--out`, `-o`   | Diretório de saída (padrão: `./downloads`)          |
+| `--modo`        | `chrome` (padrão), `headless`, `headful`            |
+| `--novo-perfil` | Recomeça o perfil dedicado do zero                  |
+| `--help`, `-h`  | Ajuda                                               |
 
 Exemplo — DAS de **Junho/2026** (que vence em julho):
 

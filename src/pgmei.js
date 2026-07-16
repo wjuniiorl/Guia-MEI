@@ -76,87 +76,26 @@ function localizarNavegadorReal() {
   return candidatos.find((p) => { try { return fs.existsSync(p); } catch { return false; } });
 }
 
-/** Diretório "User Data" real do Chrome/Edge (de onde o perfil é copiado). */
-function localizarUserDataReal(exe) {
-  if (process.env.CHROME_USER_DATA && fs.existsSync(process.env.CHROME_USER_DATA)) {
-    return process.env.CHROME_USER_DATA;
-  }
-  const home = os.homedir();
-  const ehEdge = /edge/i.test(exe || '');
-  const candidatos = process.platform === 'win32'
-    ? ehEdge
-      ? [path.join(home, 'AppData\\Local\\Microsoft\\Edge\\User Data')]
-      : [path.join(home, 'AppData\\Local\\Google\\Chrome\\User Data')]
-    : process.platform === 'darwin'
-    ? ehEdge
-      ? [path.join(home, 'Library/Application Support/Microsoft Edge')]
-      : [path.join(home, 'Library/Application Support/Google/Chrome')]
-    : ehEdge
-      ? [path.join(home, '.config/microsoft-edge')]
-      : [path.join(home, '.config/google-chrome'), path.join(home, '.config/chromium')];
-  return candidatos.find((p) => { try { return fs.existsSync(p); } catch { return false; } });
-}
-
-// Nomes que NÃO devem ser copiados do perfil real (caches, senhas, pagamentos).
-const NAO_COPIAR = new Set([
-  'Cache', 'Code Cache', 'GPUCache', 'DawnCache', 'DawnGraphiteCache', 'ShaderCache', 'GrShaderCache',
-  'Service Worker', 'Application Cache', 'CacheStorage', 'ScriptCache',
-  'Crashpad', 'Crash Reports', 'Safe Browsing', 'component_crx_cache', 'extensions_crx_cache',
-  'Login Data', 'Login Data-journal', 'Login Data For Account', 'Login Data For Account-journal',
-  'Web Data', 'Web Data-journal', 'Affiliation Database', 'Affiliation Database-journal',
-  'SingletonLock', 'SingletonSocket', 'SingletonCookie', 'DevToolsActivePort',
-]);
-
 /**
- * Copia (uma vez) o essencial do perfil REAL do Chrome/Edge para a pasta da
- * ferramenta, para que o hCaptcha reconheça um navegador "de verdade" (com
- * cookies/histórico) em vez de um perfil zerado. Não copia senhas nem caches.
- *
- * Requer o Chrome FECHADO (arquivos de cookies ficam travados enquanto aberto).
+ * Prepara o perfil dedicado para não exibir os prompts de primeira execução
+ * ("Faça login no Chrome", boas-vindas, definir navegador padrão). Escreve um
+ * Preferences mínimo apenas na 1ª vez (não sobrescreve um perfil já em uso).
  */
-function semearPerfilReal(destino, exe, log) {
-  const userData = localizarUserDataReal(exe);
-  if (!userData) {
-    log('Não localizei o perfil real do Chrome/Edge — seguindo com perfil novo (pode bloquear no captcha).');
-    return false;
-  }
-  // Descobre o subperfil mais usado (Default, Profile 1, ...).
-  let subPerfil = 'Default';
+function prepararPerfil(perfilChrome) {
   try {
-    const localState = JSON.parse(fs.readFileSync(path.join(userData, 'Local State'), 'utf8'));
-    const lastUsed = localState?.profile?.last_used;
-    if (lastUsed && fs.existsSync(path.join(userData, lastUsed))) subPerfil = lastUsed;
-  } catch { /* usa Default */ }
-
-  log(`Copiando seu perfil do ${/edge/i.test(exe) ? 'Edge' : 'Chrome'} ("${subPerfil}") para a ferramenta...`);
-  const filtro = (src) => {
-    const base = path.basename(src);
-    if (NAO_COPIAR.has(base)) return false;
-    try { if (fs.statSync(src).size > 80 * 1024 * 1024) return false; } catch {}
-    return true;
-  };
-
-  try {
-    fs.mkdirSync(path.join(destino, 'Default'), { recursive: true });
-    // Local State (raiz) — necessário para descriptografar cookies (DPAPI, mesma máquina/usuário).
-    const ls = path.join(userData, 'Local State');
-    if (fs.existsSync(ls)) fs.copyFileSync(ls, path.join(destino, 'Local State'));
-    // Subperfil real -> Default (a ferramenta sempre usa o profile Default).
-    fs.cpSync(path.join(userData, subPerfil), path.join(destino, 'Default'), {
-      recursive: true, force: true, errorOnExist: false, filter: filtro,
-    });
-    log('Perfil copiado com sucesso.');
-    return true;
-  } catch (e) {
-    if (/EBUSY|EPERM|EACCES|resource busy|locked/i.test(e.message)) {
-      throw new Error(
-        'Não consegui copiar seu perfil porque o Chrome/Edge está ABERTO. ' +
-        'Feche TODAS as janelas do Chrome e rode o comando novamente.'
-      );
-    }
-    log(`Aviso ao copiar perfil: ${e.message}. Seguindo assim mesmo.`);
-    return false;
-  }
+    const prefsPath = path.join(perfilChrome, 'Default', 'Preferences');
+    if (fs.existsSync(prefsPath)) return; // já configurado — não mexe
+    const prefs = {
+      profile: { exit_type: 'Normal', exited_cleanly: true, default_content_setting_values: {} },
+      browser: { has_seen_welcome_page: true, check_default_browser: false },
+      signin: { allowed: false, allowed_on_next_startup: false },
+      sync: { requested: false },
+      credentials_enable_service: false,
+    };
+    fs.writeFileSync(prefsPath, JSON.stringify(prefs));
+    // Sentinela de "primeira execução já feita".
+    fs.writeFileSync(path.join(perfilChrome, 'First Run'), '');
+  } catch { /* não é crítico */ }
 }
 
 function resolverProxy() {
@@ -234,8 +173,7 @@ export async function emitirDAS(opts = {}) {
     outputDir, perfilDir,
     timeoutIdentificacao = 600000,
     onLog, confirmar,
-    semear = true,     // (modo chrome) copiar o perfil real do Chrome na 1ª vez
-    reSemear = false,  // forçar recópia do perfil (perfil antigo é descartado)
+    novoPerfil = false,  // (modo chrome) recomeça o perfil dedicado do zero
   } = opts;
 
   const log = (msg) => {
@@ -255,7 +193,7 @@ export async function emitirDAS(opts = {}) {
   const perfil = perfilDir || path.resolve(process.cwd(), '.perfil-chromium');
   fs.mkdirSync(perfil, { recursive: true });
 
-  const ctx = { cnpjLimpo, anoNum, mesNum, periodoPA, dir, perfil, timeoutIdentificacao, log, confirmar, semear, reSemear };
+  const ctx = { cnpjLimpo, anoNum, mesNum, periodoPA, dir, perfil, timeoutIdentificacao, log, confirmar, novoPerfil };
   log(`Iniciando emissão do DAS — CNPJ ${formatarCnpj(cnpjLimpo)}, ${MESES_PT[mesNum - 1]}/${anoNum} (PA ${periodoPA})`);
 
   if (modo === 'chrome') return await emitirViaChromeReal(ctx);
@@ -285,17 +223,13 @@ async function emitirViaChromeReal(ctx) {
     );
   }
 
+  // Perfil dedicado e PERSISTENTE (um perfil novo/limpo passa no hCaptcha; não
+  // copiamos o perfil real — isso deixava o navegador com "cara de robô").
   const perfilChrome = path.join(ctx.perfil, 'chrome-real');
-  if (ctx.reSemear) { try { fs.rmSync(perfilChrome, { recursive: true, force: true }); } catch {} }
-  fs.mkdirSync(perfilChrome, { recursive: true });
+  if (ctx.novoPerfil) { try { fs.rmSync(perfilChrome, { recursive: true, force: true }); } catch {} }
+  fs.mkdirSync(path.join(perfilChrome, 'Default'), { recursive: true });
   try { fs.rmSync(path.join(perfilChrome, 'DevToolsActivePort'), { force: true }); } catch {}
-
-  // Na 1ª vez, copia o perfil real do Chrome (cookies/histórico) para o hCaptcha
-  // reconhecer um navegador legítimo em vez de um perfil zerado.
-  const jaSemeado = fs.existsSync(path.join(perfilChrome, 'Default'));
-  if (ctx.semear && !jaSemeado) {
-    semearPerfilReal(perfilChrome, exe, log);
-  }
+  prepararPerfil(perfilChrome); // suprime "faça login no Chrome" / boas-vindas
 
   log(`Abrindo o seu navegador: ${exe}`);
   // O navegador abre como processo normal. A porta de depuração fica disponível,
@@ -304,8 +238,11 @@ async function emitirViaChromeReal(ctx) {
   const proc = spawn(exe, [
     '--remote-debugging-port=0',
     `--user-data-dir=${perfilChrome}`,
+    '--lang=pt-BR',
     '--no-first-run',
     '--no-default-browser-check',
+    '--disable-sync',
+    '--disable-features=SigninPromo,ChromeWhatsNewUI,PrivacySandboxSettings4',
     '--start-maximized',
     URL_IDENTIFICACAO,
   ], { detached: false, stdio: 'ignore' });
