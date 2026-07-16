@@ -42,11 +42,14 @@ Opções:
   --mes,  -m   Mês de apuração (1..12)               [obrigatório]
   --out,  -o   Diretório de saída (default: ./downloads)
   --modo       chrome | headless | headful (default: chrome)
+  --novo-perfil  Recopia seu perfil do Chrome (use se o captcha voltar a bloquear)
   --help, -h   Mostra esta ajuda
 
-Modo 'chrome' (padrão): abre o seu Chrome/Edge real. Você faz a identificação
-(CNPJ + captcha) e tecla ENTER aqui; a automação emite e baixa o PDF.
-Use CHROME_PATH para apontar o executável, se não for detectado.
+Modo 'chrome' (padrão): abre o seu Chrome/Edge real usando uma CÓPIA do seu
+perfil (cookies/histórico) para o hCaptcha confiar no navegador. Você faz a
+identificação (CNPJ + captcha) e tecla ENTER aqui; a automação emite e baixa o
+PDF. IMPORTANTE: feche todas as janelas do Chrome antes da 1ª execução (para eu
+copiar o perfil). Use CHROME_PATH para apontar o executável, se necessário.
 
 Exemplo:
   node src/cli.js -c 29249163000194 -a 2026 -m 6
@@ -93,6 +96,7 @@ async function main() {
       mes: args.mes,
       modo,
       outputDir: args.out,
+      reSemear: Boolean(args['novo-perfil']),
       onLog: (msg) => console.log(`  › ${msg}`),
       // No modo chrome, aguarda o ENTER após a identificação manual.
       confirmar: modo === 'chrome'
