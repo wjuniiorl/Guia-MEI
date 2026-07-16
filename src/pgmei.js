@@ -171,6 +171,7 @@ export async function emitirLote(opts = {}) {
     auto = false,
     minimizar = false,
     chromeHeadless = false,
+    incluirAtrasadas = false,  // emite também guias com situação "Devedor"
   } = opts;
 
   const log = (msg) => {
@@ -195,7 +196,7 @@ export async function emitirLote(opts = {}) {
 
   const ctx = {
     cnpjLimpo, anoNum, meses: listaMeses, dir, perfil, timeoutIdentificacao, log, confirmar, onProgresso,
-    novoPerfil, autoInicio: auto, minimizar, headless: chromeHeadless,
+    novoPerfil, autoInicio: auto, minimizar, headless: chromeHeadless, incluirAtrasadas,
   };
   log(`Iniciando emissão — CNPJ ${formatarCnpj(cnpjLimpo)}, ${anoNum}, meses: ${listaMeses.map((m) => MESES_PT[m - 1]).join(', ')}`);
 
@@ -216,11 +217,16 @@ export async function emitirLote(opts = {}) {
 async function emitirMeses(context, page, ctx) {
   const resultados = [];
   let nome = null;
+  let atrasadas = [];
+  const emitidos = new Set();
+
   for (const mes of ctx.meses) {
     const periodo = `${MESES_PT[mes - 1]}/${ctx.anoNum}`;
     try {
       const r = await rodarEmissao(context, page, ctx, mes);
       nome = r.nome || nome;
+      if (r.atrasadas && r.atrasadas.length) atrasadas = r.atrasadas;
+      emitidos.add(`${ctx.anoNum}${String(mes).padStart(2, '0')}`);
       resultados.push({ mes, periodo, ok: true, pdfPath: r.pdfPath, fileName: r.fileName, rel: r.rel, valor: r.valor });
       if (typeof ctx.onProgresso === 'function') ctx.onProgresso({ mes, periodo, ok: true, ...r });
     } catch (e) {
@@ -229,6 +235,30 @@ async function emitirMeses(context, page, ctx) {
       if (typeof ctx.onProgresso === 'function') ctx.onProgresso({ mes, periodo, ok: false, erro: e.message });
     }
   }
+
+  // Guias em atraso (Devedor): emite também e salva na pasta do mês selecionado.
+  if (ctx.incluirAtrasadas && atrasadas.length && ctx.meses.length) {
+    const pastaAlvo = path.join(String(ctx.anoNum), String(ctx.meses[0]).padStart(2, '0'));
+    const pendentes = atrasadas.filter((pa) => !emitidos.has(pa) && String(pa).slice(0, 4) === String(ctx.anoNum));
+    if (pendentes.length) {
+      ctx.log(`Guias em atraso encontradas: ${pendentes.map((p) => MESES_PT[Number(p.slice(4, 6)) - 1]).join(', ')}`);
+    }
+    for (const pa of pendentes) {
+      const mm = Number(pa.slice(4, 6));
+      const periodo = `${MESES_PT[mm - 1]}/${ctx.anoNum} (em atraso)`;
+      try {
+        const r = await rodarEmissao(context, page, ctx, mm, pastaAlvo);
+        emitidos.add(pa);
+        resultados.push({ mes: mm, periodo, ok: true, atrasada: true, pdfPath: r.pdfPath, fileName: r.fileName, rel: r.rel, valor: r.valor });
+        if (typeof ctx.onProgresso === 'function') ctx.onProgresso({ mes: mm, periodo, ok: true, atrasada: true, ...r });
+      } catch (e) {
+        ctx.log(`Falha na guia em atraso ${MESES_PT[mm - 1]}: ${e.message}`);
+        resultados.push({ mes: mm, periodo, ok: false, atrasada: true, erro: e.message });
+        if (typeof ctx.onProgresso === 'function') ctx.onProgresso({ mes: mm, periodo, ok: false, atrasada: true, erro: e.message });
+      }
+    }
+  }
+
   return { nome, resultados };
 }
 
@@ -522,7 +552,7 @@ async function identificarAutomatico(page, ctx, { esperarCaptcha }) {
 // FASE 2: emissão (sem captcha) — comum a todos os modos
 // ---------------------------------------------------------------------------
 
-async function rodarEmissao(context, page, ctx, mesNum) {
+async function rodarEmissao(context, page, ctx, mesNum, pastaRelOverride) {
   const { anoNum, dir, cnpjLimpo, log } = ctx;
   const periodoPA = `${anoNum}${String(mesNum).padStart(2, '0')}`;
 
@@ -559,6 +589,10 @@ async function rodarEmissao(context, page, ctx, mesNum) {
       `Verifique se o mês já está disponível para emissão neste ano.`
     );
   }
+
+  // Detecta períodos com situação "Devedor" (guias em atraso) para eventual
+  // emissão automática. Retornado no resultado.
+  const atrasadas = await detectarAtrasadas(page);
 
   // Marcar o mês (o input pode estar coberto por um label — usa check e, se
   // falhar, clica via JS).
@@ -607,16 +641,17 @@ async function rodarEmissao(context, page, ctx, mesNum) {
 
   const base = sanitizarNomeArquivo(nome || `DAS ${cnpjLimpo}`);
   const fileName = `${base} - ${MESES_PT[mesNum - 1]}-${anoNum}.pdf`;
-  // Organiza em subpastas: downloads/ANO/MÊS/arquivo.pdf (ex.: 2026/06/...).
+  // Organiza em subpastas: downloads/ANO/MÊS/arquivo.pdf (ex.: 2026/06/).
+  // Guias em atraso podem ser salvas na pasta do mês selecionado (override).
   const mm = String(mesNum).padStart(2, '0');
-  const rel = path.join(String(anoNum), mm, fileName);
+  const rel = path.join(pastaRelOverride || path.join(String(anoNum), mm), fileName);
   const pdfPath = path.join(dir, rel);
   fs.mkdirSync(path.dirname(pdfPath), { recursive: true });
   fs.writeFileSync(pdfPath, pdfBuffer);
   log(`PDF salvo em: ${pdfPath}`);
 
   return {
-    pdfPath, fileName, rel,
+    pdfPath, fileName, rel, atrasadas,
     nome: nome || null,
     valor: valor || null,
     periodo: `${MESES_PT[mesNum - 1]}/${anoNum}`,
@@ -656,6 +691,20 @@ async function esperarIdentificacaoAceita(page, timeout, log) {
     await page.waitForTimeout(1000);
   }
   throw new Error('Tempo esgotado aguardando a resolução do captcha/identificação.');
+}
+
+/** Detecta os períodos com situação "Devedor" (guias em atraso). Retorna PAs (AAAAMM). */
+async function detectarAtrasadas(page) {
+  return await page.evaluate(() => {
+    const res = [];
+    document.querySelectorAll('input.paSelecionado').forEach((inp) => {
+      const tr = inp.closest('tr');
+      if (!tr) return;
+      const dev = tr.querySelector('.devedor') || /\bdevedor\b/i.test(tr.innerText || '');
+      if (dev && inp.value) res.push(inp.value);
+    });
+    return res;
+  }).catch(() => []);
 }
 
 /** Remove notificações "toast" que podem cobrir botões e interceptar cliques. */

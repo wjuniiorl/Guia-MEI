@@ -4,7 +4,7 @@ Automação que emite a **Guia de Pagamento (DAS)** do MEI no portal do Simples
 Nacional (PGMEI), preenchendo o CNPJ, escolhendo o **ano** e o **mês** de
 apuração, gerando o DAS e **salvando o PDF** com o nome do contribuinte.
 
-Funciona por **linha de comando (CLI)** e por **interface web**.
+Funciona por **interface desktop (Python)** e por **linha de comando (CLI)**.
 
 ---
 
@@ -106,47 +106,25 @@ python app.py                     # abre a janela
 No Windows, dá para abrir com **duplo clique** em `abrir-interface.bat`.
 
 Na janela:
-- **Aba "Emitir DAS"**: marque **um ou vários clientes**, escolha o **ano** e os
-  **meses**, ative *"Janela invisível"* se quiser, e clique em **Emitir DAS**.
-  O progresso aparece ao vivo; os PDFs vão para `downloads/ANO/MÊS/`.
-- **Aba "Clientes"**: adicionar / editar / excluir e **importar** uma lista.
-
-> Requer **Python 3.9+** e **Node.js** instalados. Os clientes são os mesmos da
-> interface web (arquivo `dados/clientes.json`), então os dois modos ficam
-> sincronizados.
-
-## Uso — Interface web (alternativa)
-
-```bash
-npm start
-```
-
-Abra **http://localhost:3000**. A interface tem duas abas:
-
-**Emitir DAS**
-- Escolha o **cliente** (lista salva), o **ano** e **um ou vários meses**.
-- Marque *"Janela invisível"* se não quiser ver o Chrome (opcional).
-- Clique em **"Emitir DAS"** — o Chrome abre, preenche o CNPJ, passa o captcha e
-  gera cada guia. O progresso aparece ao vivo e cada PDF fica com um botão
-  **Baixar PDF**.
-
-**Clientes**
-- **Adicionar / editar / excluir** clientes (nome + CNPJ).
-- **Importar vários** de uma vez: cole a lista (uma linha por cliente, com nome
-  e CNPJ) e clique em *Importar*.
+- **Aba "Emitir DAS"**: marque **um ou vários clientes** (só os **ativos**
+  aparecem), escolha o **ano** e os **meses**. Opções: *"Incluir guias em atraso
+  (Devedor)"* e *"Janela invisível"*. Clique em **Emitir DAS** — o progresso
+  aparece ao vivo e os PDFs vão para `downloads/ANO/MÊS/`.
+- **Aba "Clientes"**: adicionar / editar / excluir, **ativar/desativar** cada um
+  e **importar** uma lista (cole nome + CNPJ por linha).
 
 Os clientes ficam salvos **apenas na sua máquina**, em `dados/clientes.json`
 (fora do Git — dados pessoais não vão para o repositório).
 
-Variáveis de ambiente:
+> Requer **Python 3.9+** e **Node.js** instalados. A interface Python usa o motor
+> Node (`src/cli.js`) por baixo — a lógica anti-captcha fica reaproveitada.
 
-| Variável      | Descrição                                              |
-|---------------|--------------------------------------------------------|
-| `PORT`        | Porta do servidor (padrão `3000`)                      |
-| `CHROME_PATH` | Caminho do Chrome/Edge, se não for detectado           |
+## Guias em atraso (situação "Devedor")
 
-> A interface web executa o navegador **na mesma máquina do servidor**. Rode
-> localmente para que tudo funcione.
+Se você marcar *"Incluir guias em atraso"*, ao emitir um mês a ferramenta também
+detecta os períodos com situação **Devedor** (vencidos e não pagos) do mesmo ano
+e **emite cada um**, salvando na **pasta do mês selecionado** (o arquivo mantém
+o nome da competência real de cada guia).
 
 ---
 
@@ -163,13 +141,14 @@ Variáveis de ambiente:
 ## Estrutura do projeto
 
 ```
+app.py             Interface desktop (CustomTkinter)
+clientes_store.py  Cadastro de clientes (Python)
+clientes-iniciais.json  Lista inicial de clientes (semeada na 1ª vez)
 src/
-  pgmei.js     Núcleo da automação (Playwright) + modo assistido de captcha
-  cli.js       Interface de linha de comando
-  server.js    Servidor web (Express) + API
-public/
-  index.html   Interface web (formulário)
-downloads/     PDFs gerados (ignorado no git)
+  pgmei.js         Núcleo da automação (Playwright) — motor de emissão
+  cli.js           Linha de comando (usada pela interface Python)
+downloads/         PDFs gerados: ANO/MÊS/ (ignorado no git)
+dados/             clientes.json (ignorado no git)
 ```
 
 ## Observações

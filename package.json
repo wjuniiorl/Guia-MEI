@@ -8,8 +8,6 @@
     "guia-mei": "src/cli.js"
   },
   "scripts": {
-    "start": "node src/server.js",
-    "web": "node src/server.js",
     "cli": "node src/cli.js"
   },
   "keywords": [
@@ -22,7 +20,6 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "express": "^4.21.2",
     "playwright": "^1.49.1"
   }
 }

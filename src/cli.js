@@ -43,6 +43,7 @@ Opções:
   --out,  -o   Diretório de saída (default: ./downloads)
   --modo       chrome | headless | headful (default: chrome)
   --auto       preenche o CNPJ e clica Continuar sozinho
+  --atrasadas  emite também as guias em atraso (situação "Devedor")
   --min        abre a janela minimizada ("invisível", mas passa no captcha)
   --headless   (experimental) headless de verdade — costuma ser bloqueado
   --novo-perfil  Recomeça o perfil dedicado do zero (use se algo travar)
@@ -108,6 +109,7 @@ async function main() {
       auto: Boolean(args.auto) || Boolean(args.headless),
       minimizar: Boolean(args.min),
       chromeHeadless: Boolean(args.headless),
+      incluirAtrasadas: Boolean(args.atrasadas),
       onLog: (msg) => console.log(`  › ${msg}`),
       // No modo chrome manual, aguarda o ENTER após a identificação. Com --auto
       // ou --headless a automação preenche/clica sozinha, então não pede ENTER.

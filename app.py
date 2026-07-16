@@ -99,8 +99,10 @@ class App(ctk.CTk):
             chk.grid(row=i // 3, column=i % 3, sticky="w", padx=6, pady=4)
             self.check_meses[i + 1] = chk
 
+        self.sw_atrasadas = ctk.CTkSwitch(dir_, text="Incluir guias em atraso (Devedor)")
+        self.sw_atrasadas.pack(anchor="w", padx=12, pady=(14, 2))
         self.sw_invisivel = ctk.CTkSwitch(dir_, text="Janela invisível (não mostra o Chrome)")
-        self.sw_invisivel.pack(anchor="w", padx=12, pady=(14, 4))
+        self.sw_invisivel.pack(anchor="w", padx=12, pady=(2, 4))
 
         self.btn_emitir = ctk.CTkButton(dir_, text="Emitir DAS", height=40,
                                         font=("Segoe UI", 14, "bold"), fg_color="#168821",
@@ -296,15 +298,18 @@ class App(ctk.CTk):
         self.btn_emitir.configure(state="disabled", text="Emitindo...")
         self._log_limpar()
         invisivel = self.sw_invisivel.get() == 1
-        t = threading.Thread(target=self._worker, args=(selecionados, ano, meses, invisivel), daemon=True)
+        atrasadas = self.sw_atrasadas.get() == 1
+        t = threading.Thread(target=self._worker, args=(selecionados, ano, meses, invisivel, atrasadas), daemon=True)
         t.start()
 
-    def _worker(self, selecionados, ano, meses, invisivel):
+    def _worker(self, selecionados, ano, meses, invisivel, atrasadas):
         meses_str = ",".join(str(m) for m in meses)
         total = len(selecionados)
         for idx, (nome, cnpj) in enumerate(selecionados, 1):
             self.fila.put(("log", f"\n===== [{idx}/{total}] {nome} ====="))
             cmd = ["node", CLI, "-c", cnpj, "-a", str(ano), "-m", meses_str, "--auto"]
+            if atrasadas:
+                cmd.append("--atrasadas")
             if invisivel:
                 cmd.append("--min")
             try:
