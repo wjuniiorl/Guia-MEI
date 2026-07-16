@@ -8,13 +8,35 @@ import crypto from 'node:crypto';
 import { limparCnpj, cnpjValido, formatarCnpj } from './pgmei.js';
 
 const ARQUIVO = path.resolve(process.cwd(), 'dados', 'clientes.json');
+const SEED = path.resolve(process.cwd(), 'clientes-iniciais.json');
 
 function garantirDir() {
   fs.mkdirSync(path.dirname(ARQUIVO), { recursive: true });
 }
 
+/**
+ * Na primeira vez (quando ainda não existe dados/clientes.json), importa a
+ * lista inicial de clientes-iniciais.json, se houver. Depois disso, o arquivo
+ * do usuário manda — a seed não é reaplicada.
+ */
+function semearSeNecessario() {
+  if (fs.existsSync(ARQUIVO)) return;
+  let seed;
+  try { seed = JSON.parse(fs.readFileSync(SEED, 'utf8')); } catch { return; }
+  if (!Array.isArray(seed) || !seed.length) return;
+  const lista = [];
+  for (const s of seed) {
+    const c = limparCnpj(s.cnpj);
+    if (cnpjValido(c) && !lista.some((x) => x.cnpj === c)) {
+      lista.push({ id: crypto.randomUUID(), nome: String(s.nome || '').trim(), cnpj: c });
+    }
+  }
+  if (lista.length) salvar(lista);
+}
+
 /** Lê a lista de clientes (ordenada por nome). */
 export function listarClientes() {
+  semearSeNecessario();
   try {
     const lista = JSON.parse(fs.readFileSync(ARQUIVO, 'utf8'));
     return Array.isArray(lista) ? lista : [];

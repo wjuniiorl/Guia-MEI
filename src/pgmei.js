@@ -530,11 +530,11 @@ async function rodarEmissao(context, page, ctx, mesNum) {
   // conexões abertas e a rede "nunca para", o que travava a automação. Em vez
   // disso, esperamos os ELEMENTOS certos aparecerem em cada etapa.
 
-  // Emitir Guia de Pagamento (DAS)
+  // Emitir Guia de Pagamento (DAS). Navegamos direto pela URL em vez de clicar
+  // no menu — assim evitamos que um "toast" de notificação (que aparece após
+  // gerar um DAS) cubra o link e trave o clique no próximo mês.
   log('Selecionando "Emitir Guia de Pagamento (DAS)"...');
-  const linkEmissao = page.locator(SELETOR_MENU_EMISSAO);
-  if (await linkEmissao.count()) await linkEmissao.first().click();
-  else await page.goto(URL_EMISSAO, { waitUntil: 'domcontentloaded' });
+  await page.goto(URL_EMISSAO, { waitUntil: 'domcontentloaded' });
 
   // Espera o seletor de ano aparecer.
   await page
@@ -545,6 +545,7 @@ async function rodarEmissao(context, page, ctx, mesNum) {
   log(`Selecionando o ano-calendário ${anoNum}...`);
   await selecionarAno(page, anoNum, log);
   log('Confirmando o ano (Ok)...');
+  await removerToasts(page);
   await page.getByRole('button', { name: /^Ok$/i }).click();
 
   // Espera a tabela de períodos carregar (o checkbox do mês aparecer).
@@ -578,6 +579,7 @@ async function rodarEmissao(context, page, ctx, mesNum) {
 
   // Apurar/Gerar DAS
   log('Clicando em "Apurar/Gerar DAS"...');
+  await removerToasts(page);
   await page.getByRole('button', { name: /Apurar\/Gerar DAS/i }).click();
 
   // Espera o botão "Imprimir/Visualizar PDF" aparecer (tela de resultado).
@@ -654,6 +656,13 @@ async function esperarIdentificacaoAceita(page, timeout, log) {
     await page.waitForTimeout(1000);
   }
   throw new Error('Tempo esgotado aguardando a resolução do captcha/identificação.');
+}
+
+/** Remove notificações "toast" que podem cobrir botões e interceptar cliques. */
+async function removerToasts(page) {
+  await page.evaluate(() => {
+    document.querySelectorAll('#toast-container, .toast, .toast-top-center').forEach((e) => e.remove());
+  }).catch(() => {});
 }
 
 async function selecionarAno(page, anoNum, log) {
