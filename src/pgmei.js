@@ -230,9 +230,18 @@ async function emitirViaChromeReal(ctx) {
   ];
   // "Invisível" sem ser headless: joga a janela para fora da tela (o Chrome
   // ignora /min, mas respeita a posição). Continua sendo um Chrome real, então
-  // passa no hCaptcha.
+  // passa no hCaptcha. As flags --disable-*backgrounding/-throttling impedem
+  // que o Chrome desacelere a página por estar "em segundo plano" (senão os
+  // timers/JS travam). São flags de performance — NÃO mexem na impressão
+  // digital (diferente de --disable-features, que reativa o bloqueio).
   if (ctx.minimizar && !ctx.headless) {
-    args.push('--window-position=-32000,-32000', '--window-size=1200,900');
+    args.push(
+      '--window-position=-32000,-32000',
+      '--window-size=1200,900',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-background-timer-throttling',
+    );
   }
   // EXPERIMENTAL: headless costuma ser bloqueado pelo hCaptcha (impressão
   // digital de robô). Mantido como opção para o usuário testar.
@@ -525,20 +534,19 @@ async function rodarEmissao(context, page, ctx) {
   await page.getByRole('button', { name: /Apurar\/Gerar DAS/i }).click();
 
   // Espera o botão "Imprimir/Visualizar PDF" aparecer (tela de resultado).
+  // Se demorar, não falha na hora: o download tenta buscar o PDF direto pela
+  // sessão (que é o caminho principal). Só falha se o PDF também não vier.
   log('Aguardando a geração do DAS...');
   const botaoImprimir = page.locator(`a[href="/SimplesNacional/Aplicacoes/ATSPO/pgmei.app/emissao/imprimir"]`);
-  try {
-    await botaoImprimir.first().waitFor({ state: 'attached', timeout: 45000 });
-  } catch {
-    // Talvez tenha aparecido um aviso/erro na tela.
+  const apareceu = await botaoImprimir.first().waitFor({ state: 'attached', timeout: 45000 })
+    .then(() => true).catch(() => false);
+  if (!apareceu) {
     const aviso = await page.evaluate(() => {
       const a = document.querySelector('.alert, .alert-danger, .validationSummary');
       return a ? (a.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200) : '';
-    });
-    throw new Error(
-      'Botão "Imprimir/Visualizar PDF" não apareceu — a apuração pode não ter sido gerada.' +
-      (aviso ? ` Mensagem da tela: "${aviso}"` : '')
-    );
+    }).catch(() => '');
+    log('Botão de PDF demorou a aparecer; tentando baixar direto pela sessão...'
+      + (aviso ? ` (aviso na tela: "${aviso}")` : ''));
   }
 
   // Nome do contribuinte
