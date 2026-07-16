@@ -76,28 +76,6 @@ function localizarNavegadorReal() {
   return candidatos.find((p) => { try { return fs.existsSync(p); } catch { return false; } });
 }
 
-/**
- * Prepara o perfil dedicado para não exibir os prompts de primeira execução
- * ("Faça login no Chrome", boas-vindas, definir navegador padrão). Escreve um
- * Preferences mínimo apenas na 1ª vez (não sobrescreve um perfil já em uso).
- */
-function prepararPerfil(perfilChrome) {
-  try {
-    const prefsPath = path.join(perfilChrome, 'Default', 'Preferences');
-    if (fs.existsSync(prefsPath)) return; // já configurado — não mexe
-    const prefs = {
-      profile: { exit_type: 'Normal', exited_cleanly: true, default_content_setting_values: {} },
-      browser: { has_seen_welcome_page: true, check_default_browser: false },
-      signin: { allowed: false, allowed_on_next_startup: false },
-      sync: { requested: false },
-      credentials_enable_service: false,
-    };
-    fs.writeFileSync(prefsPath, JSON.stringify(prefs));
-    // Sentinela de "primeira execução já feita".
-    fs.writeFileSync(path.join(perfilChrome, 'First Run'), '');
-  } catch { /* não é crítico */ }
-}
-
 function resolverProxy() {
   const server = process.env.PLAYWRIGHT_PROXY || process.env.HTTPS_PROXY || process.env.https_proxy;
   return server ? { server } : undefined;
@@ -223,35 +201,33 @@ async function emitirViaChromeReal(ctx) {
     );
   }
 
-  // Perfil dedicado e PERSISTENTE (um perfil novo/limpo passa no hCaptcha; não
-  // copiamos o perfil real — isso deixava o navegador com "cara de robô").
+  // Perfil dedicado e PERSISTENTE. Um perfil novo/limpo passa no hCaptcha.
   const perfilChrome = path.join(ctx.perfil, 'chrome-real');
   if (ctx.novoPerfil) { try { fs.rmSync(perfilChrome, { recursive: true, force: true }); } catch {} }
-  fs.mkdirSync(path.join(perfilChrome, 'Default'), { recursive: true });
+  fs.mkdirSync(perfilChrome, { recursive: true });
   try { fs.rmSync(path.join(perfilChrome, 'DevToolsActivePort'), { force: true }); } catch {}
-  prepararPerfil(perfilChrome); // suprime "faça login no Chrome" / boas-vindas
 
   log(`Abrindo o seu navegador: ${exe}`);
-  // O navegador abre como processo normal. A porta de depuração fica disponível,
-  // mas NINGUÉM se conecta durante a identificação — então não há rastro de
-  // automação para o hCaptcha detectar.
-  const proc = spawn(exe, [
-    '--remote-debugging-port=0',
+  // IMPORTANTE: usamos APENAS as flags mínimas que comprovadamente passam no
+  // hCaptcha (idênticas a um Chrome aberto normalmente). Flags extras como
+  // --disable-features / --disable-sync mudam a "impressão digital" do navegador
+  // e voltam a disparar o bloqueio "Comportamento de Robô". Não adicione flags
+  // aqui sem testar. O prompt "Faça login no Chrome" pode aparecer — basta o
+  // usuário dispensá-lo; não interfere na emissão.
+  const args = [
+    `--remote-debugging-port=${process.env.PGMEI_DEBUG_PORT || 0}`,
     `--user-data-dir=${perfilChrome}`,
     '--lang=pt-BR',
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--disable-sync',
-    '--disable-features=SigninPromo,ChromeWhatsNewUI,PrivacySandboxSettings4',
-    '--start-maximized',
     URL_IDENTIFICACAO,
-  ], { detached: false, stdio: 'ignore' });
+  ];
+  const proc = spawn(exe, args, { detached: false, stdio: 'ignore' });
   proc.on('error', (e) => log(`Falha ao iniciar o navegador: ${e.message}`));
 
   try {
     // Instruções para a FASE 1 (manual).
     log('');
     log('┌─ FAÇA A IDENTIFICAÇÃO NA JANELA DO NAVEGADOR ─────────────────────');
+    log('│  0) Se aparecer "Faça login no Chrome", pode dispensar (Agora não).');
     log(`│  1) Digite o CNPJ:  ${formatarCnpj(cnpjLimpo)}`);
     log('│  2) Clique em "Continuar" e resolva o captcha, se aparecer.');
     log('│  3) Aguarde chegar na tela com "Emitir Guia de Pagamento (DAS)".');
