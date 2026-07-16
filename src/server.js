@@ -83,11 +83,14 @@ app.post('/api/emitir', async (req, res) => {
   res.end();
 });
 
-// Baixa um PDF já gerado (a partir da pasta downloads).
+// Baixa um PDF já gerado (aceita o caminho relativo ano/mês/arquivo.pdf,
+// resolvido com segurança dentro da pasta downloads).
 app.get('/api/download', (req, res) => {
-  const nome = path.basename(String(req.query.file || ''));
-  const full = path.join(DOWNLOADS_DIR, nome);
-  if (!nome || !fs.existsSync(full)) return res.status(404).json({ erro: 'Arquivo não encontrado.' });
+  const rel = String(req.query.file || '');
+  const full = path.resolve(DOWNLOADS_DIR, rel);
+  if (!full.startsWith(DOWNLOADS_DIR) || !fs.existsSync(full)) {
+    return res.status(404).json({ erro: 'Arquivo não encontrado.' });
+  }
   res.download(full);
 });
 

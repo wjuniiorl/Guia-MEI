@@ -221,7 +221,7 @@ async function emitirMeses(context, page, ctx) {
     try {
       const r = await rodarEmissao(context, page, ctx, mes);
       nome = r.nome || nome;
-      resultados.push({ mes, periodo, ok: true, pdfPath: r.pdfPath, fileName: r.fileName, valor: r.valor });
+      resultados.push({ mes, periodo, ok: true, pdfPath: r.pdfPath, fileName: r.fileName, rel: r.rel, valor: r.valor });
       if (typeof ctx.onProgresso === 'function') ctx.onProgresso({ mes, periodo, ok: true, ...r });
     } catch (e) {
       ctx.log(`Falha no mês ${MESES_PT[mes - 1]}: ${e.message}`);
@@ -322,19 +322,26 @@ async function emitirViaChromeReal(ctx) {
       await page.locator('#cnpj').fill(cnpjLimpo);
       await page.getByRole('button', { name: /Continuar/i }).click();
 
-      // Detecta bloqueio de captcha logo após o clique.
-      await page.waitForTimeout(3500);
-      const bloqueado = await page.evaluate(() =>
-        /Comportamento de Rob[oô]|Impedido por prote[cç][aã]o Captcha|13896/i.test(document.body.innerText || ''));
+      // Aguarda o desfecho de forma rápida: segue assim que o menu aparece
+      // (sucesso), ou detecta o bloqueio de captcha, o que vier primeiro.
+      const prazo = Date.now() + 20000;
+      let sucesso = false, bloqueado = false;
+      while (Date.now() < prazo) {
+        if (await page.locator(SELETOR_MENU_EMISSAO).count()) { sucesso = true; break; }
+        bloqueado = await page.evaluate(() =>
+          /Comportamento de Rob[oô]|Impedido por prote[cç][aã]o Captcha|13896/i.test(document.body.innerText || ''))
+          .catch(() => false);
+        if (bloqueado) break;
+        await page.waitForTimeout(250);
+      }
       if (bloqueado) {
         throw new CaptchaBloqueado(
           'O modo automático (--auto) foi bloqueado pelo captcha. Rode SEM --auto ' +
           '(você digita o CNPJ e clica em Continuar manualmente).'
         );
       }
-
-      // Se apareceu um desafio de captcha para resolver, espera o usuário.
-      if (!(await page.locator(SELETOR_MENU_EMISSAO).count())) {
+      if (!sucesso) {
+        // Pode ter aparecido um desafio de captcha para resolver manualmente.
         log('Se aparecer um desafio de captcha, resolva na janela. Aguardando identificação...');
         await esperarIdentificacaoAceita(page, ctx.timeoutIdentificacao, log);
       }
@@ -598,12 +605,16 @@ async function rodarEmissao(context, page, ctx, mesNum) {
 
   const base = sanitizarNomeArquivo(nome || `DAS ${cnpjLimpo}`);
   const fileName = `${base} - ${MESES_PT[mesNum - 1]}-${anoNum}.pdf`;
-  const pdfPath = path.join(dir, fileName);
+  // Organiza em subpastas: downloads/ANO/MÊS/arquivo.pdf (ex.: 2026/06/...).
+  const mm = String(mesNum).padStart(2, '0');
+  const rel = path.join(String(anoNum), mm, fileName);
+  const pdfPath = path.join(dir, rel);
+  fs.mkdirSync(path.dirname(pdfPath), { recursive: true });
   fs.writeFileSync(pdfPath, pdfBuffer);
   log(`PDF salvo em: ${pdfPath}`);
 
   return {
-    pdfPath, fileName,
+    pdfPath, fileName, rel,
     nome: nome || null,
     valor: valor || null,
     periodo: `${MESES_PT[mesNum - 1]}/${anoNum}`,

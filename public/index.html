@@ -304,7 +304,7 @@
         html += `<tr><td>${r.periodo}</td>`;
         html += r.ok
           ? `<td><span class="badge ok">OK</span></td><td>${r.valor || '-'}</td>
-             <td><a class="mini dl" href="/api/download?file=${encodeURIComponent(r.fileName)}">Baixar PDF</a></td>`
+             <td><a class="mini dl" href="/api/download?file=${encodeURIComponent(r.rel || r.fileName)}">Baixar PDF</a></td>`
           : `<td><span class="badge erro">Falhou</span></td><td colspan="2">${escapeHtml(r.erro || '')}</td>`;
         html += '</tr>';
       }
