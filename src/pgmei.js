@@ -201,33 +201,48 @@ async function emitirViaChromeReal(ctx) {
     );
   }
 
-  // Perfil dedicado e PERSISTENTE. Um perfil novo/limpo passa no hCaptcha.
+  // Perfil dedicado e PERSISTENTE (não recriamos a cada execução: assim o Chrome
+  // lembra que você dispensou o login e não fica perguntando de novo).
   const perfilChrome = path.join(ctx.perfil, 'chrome-real');
   if (ctx.novoPerfil) { try { fs.rmSync(perfilChrome, { recursive: true, force: true }); } catch {} }
   fs.mkdirSync(perfilChrome, { recursive: true });
   try { fs.rmSync(path.join(perfilChrome, 'DevToolsActivePort'), { force: true }); } catch {}
 
-  log(`Abrindo o seu navegador: ${exe}`);
-  // IMPORTANTE: usamos APENAS as flags mínimas que comprovadamente passam no
-  // hCaptcha (idênticas a um Chrome aberto normalmente). Flags extras como
-  // --disable-features / --disable-sync mudam a "impressão digital" do navegador
-  // e voltam a disparar o bloqueio "Comportamento de Robô". Não adicione flags
-  // aqui sem testar. O prompt "Faça login no Chrome" pode aparecer — basta o
-  // usuário dispensá-lo; não interfere na emissão.
+  const porta = Number(process.env.PGMEI_DEBUG_PORT || 9222);
+  // Flags mínimas. --no-first-run e --no-default-browser-check só evitam os
+  // prompts de "primeira execução" e "definir como padrão" (não mexem na
+  // impressão digital). NÃO adicione --disable-features/--disable-sync: isso
+  // reativa o bloqueio "Comportamento de Robô".
   const args = [
-    `--remote-debugging-port=${process.env.PGMEI_DEBUG_PORT || 0}`,
+    `--remote-debugging-port=${porta}`,
     `--user-data-dir=${perfilChrome}`,
     '--lang=pt-BR',
+    '--no-first-run',
+    '--no-default-browser-check',
     URL_IDENTIFICACAO,
   ];
-  const proc = spawn(exe, args, { detached: false, stdio: 'ignore' });
-  proc.on('error', (e) => log(`Falha ao iniciar o navegador: ${e.message}`));
 
+  log(`Abrindo o seu navegador: ${exe}`);
+  // CRÍTICO: o Chrome é aberto DESTACADO do Node (como se você tivesse digitado
+  // o comando no terminal). Quando o Node abre o Chrome como processo filho, o
+  // hCaptcha detecta e bloqueia ("Comportamento de Robô"). Destacar resolve.
+  const proc = lancarNavegadorDestacado(exe, args, log);
+
+  const fecharNavegador = async (browser, page) => {
+    try {
+      if (page) { const s = await page.context().newCDPSession(page); await s.send('Browser.close'); }
+    } catch { /* fecha pelo processo abaixo */ }
+    try { if (browser) await browser.close(); } catch {}
+    try { proc.kill(); } catch {}
+  };
+
+  let browser = null;
+  let page = null;
   try {
     // Instruções para a FASE 1 (manual).
     log('');
     log('┌─ FAÇA A IDENTIFICAÇÃO NA JANELA DO NAVEGADOR ─────────────────────');
-    log('│  0) Se aparecer "Faça login no Chrome", pode dispensar (Agora não).');
+    log('│  • Se pedir login/definir padrão, pode dispensar (não é preciso).');
     log(`│  1) Digite o CNPJ:  ${formatarCnpj(cnpjLimpo)}`);
     log('│  2) Clique em "Continuar" e resolva o captcha, se aparecer.');
     log('│  3) Aguarde chegar na tela com "Emitir Guia de Pagamento (DAS)".');
@@ -238,20 +253,37 @@ async function emitirViaChromeReal(ctx) {
     }
 
     // FASE 2: agora sim conecta a automação e detecta a identificação.
-    const porta = await esperarPortaCDP(perfilChrome, 20000);
+    await esperarPortaCDP(perfilChrome, porta, 20000);
     log('Conectando ao navegador para continuar a emissão...');
-    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${porta}`);
-    try {
-      const context = browser.contexts()[0] || await browser.newContext();
-      const page = await encontrarPaginaIdentificada(context, ctx.timeoutIdentificacao, log);
-      page.setDefaultTimeout(45000);
-      return await rodarEmissao(context, page, ctx);
-    } finally {
-      await browser.close().catch(() => {}); // apenas desconecta o Playwright
-    }
-  } finally {
-    try { proc.kill(); } catch {}
+    browser = await chromium.connectOverCDP(`http://127.0.0.1:${porta}`);
+    const context = browser.contexts()[0] || await browser.newContext();
+    page = await encontrarPaginaIdentificada(context, ctx.timeoutIdentificacao, log);
+    page.setDefaultTimeout(45000);
+    const resultado = await rodarEmissao(context, page, ctx);
+    await fecharNavegador(browser, page);
+    return resultado;
+  } catch (err) {
+    await fecharNavegador(browser, page);
+    throw err;
   }
+}
+
+/**
+ * Abre o navegador DESTACADO do processo Node (para não ficar como processo
+ * filho — o que o hCaptcha detecta). No Windows usa `cmd /c start`, replicando
+ * um lançamento manual pelo usuário.
+ */
+function lancarNavegadorDestacado(exe, args, log) {
+  let proc;
+  if (process.platform === 'win32') {
+    const linha = `start "PGMEI" "${exe}" ` + args.map((a) => `"${a}"`).join(' ');
+    proc = spawn('cmd.exe', ['/c', linha], { stdio: 'ignore', windowsVerbatimArguments: true });
+  } else {
+    proc = spawn(exe, args, { stdio: 'ignore', detached: true });
+    proc.unref();
+  }
+  proc.on('error', (e) => log(`Falha ao iniciar o navegador: ${e.message}`));
+  return proc;
 }
 
 /** Encontra a aba já identificada (com o menu de emissão). Aguarda se preciso. */
@@ -272,21 +304,22 @@ async function encontrarPaginaIdentificada(context, timeout, log) {
   throw new Error('Tempo esgotado aguardando a identificação (tela "Emitir Guia de Pagamento (DAS)").');
 }
 
-/** Aguarda o Chrome escrever DevToolsActivePort e devolve a porta CDP. */
-async function esperarPortaCDP(perfilChrome, timeout) {
+/** Aguarda a porta de depuração do Chrome responder. */
+async function esperarPortaCDP(perfilChrome, porta, timeout) {
   const arquivo = path.join(perfilChrome, 'DevToolsActivePort');
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
-    try {
-      const porta = Number(fs.readFileSync(arquivo, 'utf8').trim().split('\n')[0]);
-      if (porta > 0) {
-        await sondarHttp(`http://127.0.0.1:${porta}/json/version`, 3000).catch(() => {});
-        return porta;
-      }
-    } catch { /* ainda não escreveu */ }
-    await esperar(250);
+    // Sinal 1: o Chrome escreveu o DevToolsActivePort (subiu a depuração).
+    const subiu = fs.existsSync(arquivo);
+    // Sinal 2: a porta responde.
+    if (subiu) {
+      const ok = await sondarHttp(`http://127.0.0.1:${porta}/json/version`, 2500)
+        .then(() => true).catch(() => false);
+      if (ok) return porta;
+    }
+    await esperar(300);
   }
-  throw new Error('Não foi possível iniciar a depuração do navegador (porta CDP não abriu).');
+  throw new Error('Não foi possível conectar à depuração do navegador (a janela do Chrome abriu?).');
 }
 
 function sondarHttp(url, timeout) {
