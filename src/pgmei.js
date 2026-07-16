@@ -215,6 +215,8 @@ async function emitirViaChromeReal(ctx) {
   // reativa o bloqueio "Comportamento de Robô".
   const args = [
     `--remote-debugging-port=${porta}`,
+    // Necessário para o Playwright conseguir conectar via CDP no Chrome 111+.
+    '--remote-allow-origins=*',
     `--user-data-dir=${perfilChrome}`,
     '--lang=pt-BR',
     '--no-first-run',
@@ -253,9 +255,9 @@ async function emitirViaChromeReal(ctx) {
     }
 
     // FASE 2: agora sim conecta a automação e detecta a identificação.
-    await esperarPortaCDP(perfilChrome, porta, 20000);
+    const portaReal = await esperarPortaCDP(perfilChrome, porta, 25000);
     log('Conectando ao navegador para continuar a emissão...');
-    browser = await chromium.connectOverCDP(`http://127.0.0.1:${porta}`);
+    browser = await conectarCDP(portaReal, log);
     const context = browser.contexts()[0] || await browser.newContext();
     page = await encontrarPaginaIdentificada(context, ctx.timeoutIdentificacao, log);
     page.setDefaultTimeout(45000);
@@ -304,22 +306,44 @@ async function encontrarPaginaIdentificada(context, timeout, log) {
   throw new Error('Tempo esgotado aguardando a identificação (tela "Emitir Guia de Pagamento (DAS)").');
 }
 
-/** Aguarda a porta de depuração do Chrome responder. */
-async function esperarPortaCDP(perfilChrome, porta, timeout) {
+/**
+ * Aguarda a depuração do Chrome ficar pronta e devolve a porta REAL (lida do
+ * arquivo DevToolsActivePort, que é a fonte da verdade — caso a porta pedida
+ * estivesse ocupada, o Chrome pode ter usado outra).
+ */
+async function esperarPortaCDP(perfilChrome, portaPedida, timeout) {
   const arquivo = path.join(perfilChrome, 'DevToolsActivePort');
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
-    // Sinal 1: o Chrome escreveu o DevToolsActivePort (subiu a depuração).
-    const subiu = fs.existsSync(arquivo);
-    // Sinal 2: a porta responde.
-    if (subiu) {
-      const ok = await sondarHttp(`http://127.0.0.1:${porta}/json/version`, 2500)
+    let porta = portaPedida;
+    try {
+      const doArquivo = Number(fs.readFileSync(arquivo, 'utf8').trim().split('\n')[0]);
+      if (doArquivo > 0) porta = doArquivo;
+    } catch { /* ainda não escreveu */ }
+
+    for (const host of ['127.0.0.1', 'localhost']) {
+      const ok = await sondarHttp(`http://${host}:${porta}/json/version`, 2000)
         .then(() => true).catch(() => false);
       if (ok) return porta;
     }
     await esperar(300);
   }
   throw new Error('Não foi possível conectar à depuração do navegador (a janela do Chrome abriu?).');
+}
+
+/** Conecta ao Chrome via CDP, tentando 127.0.0.1 e localhost, com pequena repetição. */
+async function conectarCDP(porta, log) {
+  const endpoints = [`http://127.0.0.1:${porta}`, `http://localhost:${porta}`];
+  let ultimoErro;
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    for (const ep of endpoints) {
+      try {
+        return await chromium.connectOverCDP(ep);
+      } catch (e) { ultimoErro = e; }
+    }
+    await esperar(500);
+  }
+  throw new Error(`Não consegui conectar ao navegador via CDP: ${ultimoErro?.message || 'desconhecido'}`);
 }
 
 function sondarHttp(url, timeout) {
