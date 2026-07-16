@@ -15,32 +15,29 @@ A tela de identificação do PGMEI é protegida por **hCaptcha invisível** que
 vezes sem nem exibir um desafio, apenas recusando:
 *"Impedido por proteção Captcha. Comportamento de Robô"*.
 
-Por isso o **modo padrão é `chrome`**, que usa o **seu Chrome (ou Edge) real**:
+Por isso o **modo padrão é `chrome`**, que separa o processo em **duas fases**:
 
-1. A ferramenta **abre o seu Chrome/Edge de verdade** (como um navegador normal,
-   sem flags de automação) e **se conecta** a ele.
-2. Ela **preenche o CNPJ** e clica em Continuar. Se o captcha aparecer, **você
-   resolve** na janela (é a única etapa manual).
-3. Assim que a identificação é aceita, a automação **assume sozinha**: escolhe o
-   ano, marca o mês, gera e baixa o PDF.
+**Fase 1 — Identificação (você, manual):** a ferramenta apenas **abre o seu
+Chrome/Edge real** já na tela do PGMEI. **Nenhuma automação toca no navegador
+aqui.** Você digita o CNPJ (a ferramenta mostra ele formatado no terminal para
+facilitar), clica em **Continuar** e resolve o captcha, como um humano normal.
+É justamente esse "não encostar" que despista o hCaptcha.
 
-Como o navegador não nasce marcado como automação, o hCaptcha tem **muito mais
-chance de liberar** (ou de mostrar um desafio *solucionável* em vez do bloqueio).
-Um **perfil dedicado** (`.perfil-chromium/chrome-real`) guarda os cookies,
-reduzindo desafios nas próximas execuções.
+**Fase 2 — Emissão (automação):** quando você já estiver na tela com **"Emitir
+Guia de Pagamento (DAS)"**, volte ao terminal e tecle **ENTER**. Só então a
+automação **se conecta** ao navegador e faz o resto sozinha: escolhe o ano,
+marca o mês, gera e baixa o PDF. Essas telas **não têm captcha**.
 
-> Nada é 100% garantido contra o hCaptcha: se ainda assim bloquear, você pode
-> fazer **toda** a identificação manualmente na janela que abriu — a automação
-> espera e continua a partir do momento em que você estiver identificado.
+Um **perfil dedicado** (`.perfil-chromium/chrome-real`) guarda os cookies, o que
+costuma **manter você identificado** por um tempo nas próximas execuções.
 
 ### Modos disponíveis (`--modo`)
 
-| Modo        | O que faz                                                                 |
-|-------------|---------------------------------------------------------------------------|
-| `chrome`    | **(padrão)** Abre o Chrome/Edge real e conecta. Melhor contra o captcha.   |
-| `assistido` | Tenta o Chromium oculto; se bloquear, cai para o Chrome real.             |
-| `headless`  | Chromium oculto (para testes/CI; falha se o captcha desafiar).            |
-| `headful`   | Chromium empacotado com janela (costuma ser bloqueado pelo hCaptcha).     |
+| Modo       | O que faz                                                                    |
+|------------|------------------------------------------------------------------------------|
+| `chrome`   | **(padrão)** Chrome/Edge real; identificação manual + ENTER; automação segue. |
+| `headless` | Chromium oculto (testes/CI; **bloqueado pelo captcha** na identificação).     |
+| `headful`  | Chromium empacotado com janela (também costuma ser **bloqueado** pelo captcha).|
 
 > Se a ferramenta não encontrar o Chrome/Edge automaticamente, aponte o caminho
 > com a variável `CHROME_PATH` (ex.: `set CHROME_PATH=C:\caminho\chrome.exe`).
@@ -73,7 +70,7 @@ Opções:
 | `--ano`, `-a`  | Ano-calendário, ex.: `2026` **[obrigatório]**        |
 | `--mes`, `-m`  | Mês de apuração, `1`..`12` **[obrigatório]**         |
 | `--out`, `-o`  | Diretório de saída (padrão: `./downloads`)           |
-| `--modo`       | `chrome` (padrão), `assistido`, `headless`, `headful`|
+| `--modo`       | `chrome` (padrão), `headless`, `headful`             |
 | `--help`, `-h` | Ajuda                                                |
 
 Exemplo — DAS de **Junho/2026** (que vence em julho):
@@ -100,7 +97,7 @@ Variáveis de ambiente:
 | Variável      | Descrição                                              |
 |---------------|--------------------------------------------------------|
 | `PORT`        | Porta do servidor (padrão `3000`)                      |
-| `MODO`        | `chrome` (padrão), `assistido`, `headless`, `headful`  |
+| `MODO`        | `chrome` (padrão), `headless`, `headful`               |
 | `CHROME_PATH` | Caminho do Chrome/Edge, se não for detectado           |
 
 > A interface web executa o navegador **na mesma máquina do servidor**. Rode

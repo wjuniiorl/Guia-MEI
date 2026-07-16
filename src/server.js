@@ -19,7 +19,7 @@ const PORT = process.env.PORT || 3000;
 // Modo do navegador: assistido (padrão) | headless | headful.
 // No modo assistido, se o hCaptcha desafiar, a janela do navegador abre na
 // máquina onde o servidor roda para o usuário resolver.
-const MODO = ['chrome', 'assistido', 'headless', 'headful'].includes(process.env.MODO) ? process.env.MODO : 'chrome';
+const MODO = ['chrome', 'headless', 'headful'].includes(process.env.MODO) ? process.env.MODO : 'chrome';
 
 app.use(express.json());
 app.use(express.static(PUBLIC_DIR));
@@ -48,8 +48,8 @@ app.post('/api/emitir', async (req, res) => {
       modo: MODO,
       outputDir: DOWNLOADS_DIR,
       onLog: (msg) => console.log(`[web] ${msg}`),
-      aoAguardarCaptcha: () =>
-        console.log('[web] Aguardando resolução manual do captcha na janela do navegador...'),
+      // Sem confirmação por terminal na web: a automação conecta e aguarda
+      // a identificação ser concluída na janela do navegador (tela de emissão).
     });
 
     // Devolve o PDF para download com o nome do contribuinte.

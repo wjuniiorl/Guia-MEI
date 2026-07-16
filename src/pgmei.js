@@ -1,19 +1,19 @@
 // Núcleo da automação de emissão do DAS (PGMEI) usando Playwright.
 //
-// Fluxo automatizado:
-//   1. Acessa a página de identificação do PGMEI
-//   2. Preenche o CNPJ e clica em "Continuar"  (aqui há hCaptcha invisível)
-//   3. Seleciona "Emitir Guia de Pagamento (DAS)"
-//   4. Seleciona o ano-calendário e clica em "Ok"
-//   5. Marca o período de apuração (mês) e clica em "Apurar/Gerar DAS"
-//   6. Extrai o nome do contribuinte e baixa o PDF da guia
+// CAPTCHA (importante): a tela de identificação do PGMEI usa hCaptcha INVISÍVEL
+// que roda no clique do botão "Continuar" e DETECTA/BLOQUEIA navegadores
+// controlados por automação (Playwright/Selenium) — muitas vezes sem exibir
+// desafio, apenas recusando ("Comportamento de Robô"). Até uma conexão de
+// depuração (CDP) durante a identificação pode ser detectada.
 //
-// CAPTCHA: o portal usa hCaptcha invisível que detecta e BLOQUEIA navegadores
-// controlados por automação (Playwright/Selenium) — nem exibe desafio, só
-// recusa ("Comportamento de Robô"). Por isso o modo recomendado é 'chrome':
-// a ferramenta abre o SEU Chrome/Edge real (sem flags de automação) e se
-// CONECTA a ele via CDP. Assim o hCaptcha vê um navegador normal; você resolve
-// a identificação/captcha (uma vez) e a automação assume o resto.
+// Por isso o modo recomendado é 'chrome', que separa as duas fases:
+//   FASE 1 (identificação, com captcha): a ferramenta apenas ABRE o seu Chrome
+//     real (sem qualquer automação conectada). VOCÊ digita o CNPJ, clica em
+//     Continuar e resolve o captcha, como um humano normal. Nada de automação
+//     encostando no navegador aqui — então o hCaptcha vê um navegador legítimo.
+//   FASE 2 (emissão, sem captcha): quando você já está identificado, a
+//     automação SE CONECTA ao navegador e faz o resto sozinha (ano, mês,
+//     gerar e baixar o PDF). Essas telas não têm captcha.
 //
 // Exporta: emitirDAS(opts) => { pdfPath, fileName, nome, valor, periodo }
 
@@ -44,7 +44,6 @@ export class CaptchaBloqueado extends Error {
 // Descoberta de navegador / ambiente
 // ---------------------------------------------------------------------------
 
-/** Executável do Chromium empacotado (usado pelos modos headless/headful/assistido). */
 function resolverExecutavel() {
   const explicito = process.env.PLAYWRIGHT_CHROMIUM_PATH;
   if (explicito && fs.existsSync(explicito)) return explicito;
@@ -55,9 +54,7 @@ function resolverExecutavel() {
 
 /** Localiza o Google Chrome (ou Edge) REAL instalado na máquina. */
 function localizarNavegadorReal() {
-  if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) {
-    return process.env.CHROME_PATH;
-  }
+  if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) return process.env.CHROME_PATH;
   const home = os.homedir();
   const candidatos = process.platform === 'win32'
     ? [
@@ -73,22 +70,17 @@ function localizarNavegadorReal() {
         '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
       ]
     : [
-        '/usr/bin/google-chrome',
-        '/usr/bin/google-chrome-stable',
-        '/usr/bin/chromium',
-        '/usr/bin/chromium-browser',
-        '/usr/bin/microsoft-edge',
+        '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable',
+        '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/microsoft-edge',
       ];
   return candidatos.find((p) => { try { return fs.existsSync(p); } catch { return false; } });
 }
 
-/** Proxy de saída (apenas ambientes restritos; numa máquina normal é undefined). */
 function resolverProxy() {
   const server = process.env.PLAYWRIGHT_PROXY || process.env.HTTPS_PROXY || process.env.https_proxy;
   return server ? { server } : undefined;
 }
 
-/** Args extras do Chromium empacotado (TLS 1.2 sob proxy que intercepta TLS). */
 function argsChromium(proxy) {
   const args = [];
   if (proxy) args.push('--ssl-version-max=tls1.2');
@@ -97,29 +89,28 @@ function argsChromium(proxy) {
 }
 
 // ---------------------------------------------------------------------------
-// Validação de CNPJ / utilidades
+// CNPJ / utilidades
 // ---------------------------------------------------------------------------
 
 export function limparCnpj(cnpj) {
   return String(cnpj || '').replace(/\D/g, '');
 }
 
+export function formatarCnpj(cnpj) {
+  const c = limparCnpj(cnpj).padStart(14, '0').slice(0, 14);
+  return `${c.slice(0, 2)}.${c.slice(2, 5)}.${c.slice(5, 8)}/${c.slice(8, 12)}-${c.slice(12, 14)}`;
+}
+
 export function cnpjValido(cnpj) {
   const c = limparCnpj(cnpj);
   if (c.length !== 14) return false;
   if (/^(\d)\1{13}$/.test(c)) return false;
-
   const calcDigito = (base) => {
-    let soma = 0;
-    let peso = base.length - 7;
-    for (let i = 0; i < base.length; i++) {
-      soma += Number(base[i]) * peso;
-      peso = peso === 2 ? 9 : peso - 1;
-    }
+    let soma = 0, peso = base.length - 7;
+    for (let i = 0; i < base.length; i++) { soma += Number(base[i]) * peso; peso = peso === 2 ? 9 : peso - 1; }
     const resto = soma % 11;
     return resto < 2 ? 0 : 11 - resto;
   };
-
   const d1 = calcDigito(c.slice(0, 12));
   const d2 = calcDigito(c.slice(0, 12) + d1);
   return c.endsWith(`${d1}${d2}`);
@@ -127,12 +118,11 @@ export function cnpjValido(cnpj) {
 
 function sanitizarNomeArquivo(texto) {
   return String(texto)
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[\\/:*?"<>|]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
 }
+
+function esperar(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 // ---------------------------------------------------------------------------
 // API pública
@@ -145,27 +135,22 @@ function sanitizarNomeArquivo(texto) {
  * @param {string} opts.cnpj        CNPJ (com ou sem formatação)
  * @param {number|string} opts.ano  Ano-calendário (ex: 2026)
  * @param {number|string} opts.mes  Mês de apuração 1..12
- * @param {'chrome'|'assistido'|'headless'|'headful'} [opts.modo='chrome']
- *        - 'chrome':    abre o Chrome/Edge REAL e se conecta (melhor contra o captcha). [recomendado]
- *        - 'assistido': tenta o Chromium oculto; se o captcha bloquear, cai para o Chrome real.
- *        - 'headless':  Chromium oculto (falha com CaptchaBloqueado se desafiado). Para testes/CI.
- *        - 'headful':   Chromium empacotado com janela (costuma ser bloqueado pelo hCaptcha).
+ * @param {'chrome'|'headless'|'headful'} [opts.modo='chrome']
  * @param {string}  [opts.outputDir]  Diretório do PDF (default: ./downloads)
- * @param {string}  [opts.perfilDir]  Diretório do perfil persistente (default: ./.perfil-chromium)
- * @param {number}  [opts.timeoutCaptcha=300000]  Tempo máx. aguardando identificação manual (ms)
- * @param {function}[opts.onLog]      Callback de log (msg) => void
- * @param {function}[opts.aoAguardarCaptcha]  Chamado quando entra em espera manual do captcha
- * @returns {Promise<{pdfPath:string, fileName:string, nome:string, valor:string|null, periodo:string}>}
+ * @param {string}  [opts.perfilDir]  Diretório do perfil dedicado (default: ./.perfil-chromium)
+ * @param {number}  [opts.timeoutIdentificacao=600000]  Tempo máx. aguardando identificação (ms)
+ * @param {function}[opts.onLog]     Callback de log (msg) => void
+ * @param {function}[opts.confirmar] (modo chrome) async () => void — resolve quando o usuário
+ *        avisar que concluiu a identificação. Se ausente, a automação aguarda automaticamente
+ *        (conectando-se e detectando a tela de emissão).
+ * @returns {Promise<{pdfPath, fileName, nome, valor, periodo}>}
  */
 export async function emitirDAS(opts = {}) {
   const {
-    cnpj, ano, mes,
-    modo = 'chrome',
-    outputDir,
-    perfilDir,
-    timeoutCaptcha = 300000,
-    onLog,
-    aoAguardarCaptcha,
+    cnpj, ano, mes, modo = 'chrome',
+    outputDir, perfilDir,
+    timeoutIdentificacao = 600000,
+    onLog, confirmar,
   } = opts;
 
   const log = (msg) => {
@@ -175,8 +160,7 @@ export async function emitirDAS(opts = {}) {
 
   const cnpjLimpo = limparCnpj(cnpj);
   if (cnpjLimpo.length !== 14) throw new Error('CNPJ deve conter 14 dígitos (com dígito verificador).');
-  const anoNum = Number(ano);
-  const mesNum = Number(mes);
+  const anoNum = Number(ano), mesNum = Number(mes);
   if (!Number.isInteger(mesNum) || mesNum < 1 || mesNum > 12) throw new Error('Mês inválido. Informe um número de 1 a 12.');
   if (!Number.isInteger(anoNum) || anoNum < 2009 || anoNum > 2100) throw new Error('Ano inválido.');
 
@@ -186,47 +170,131 @@ export async function emitirDAS(opts = {}) {
   const perfil = perfilDir || path.resolve(process.cwd(), '.perfil-chromium');
   fs.mkdirSync(perfil, { recursive: true });
 
-  const ctx = { cnpjLimpo, anoNum, mesNum, periodoPA, dir, perfil, timeoutCaptcha, log, aoAguardarCaptcha };
-  log(`Iniciando emissão do DAS — CNPJ ${cnpjLimpo}, ${MESES_PT[mesNum - 1]}/${anoNum} (PA ${periodoPA})`);
+  const ctx = { cnpjLimpo, anoNum, mesNum, periodoPA, dir, perfil, timeoutIdentificacao, log, confirmar };
+  log(`Iniciando emissão do DAS — CNPJ ${formatarCnpj(cnpjLimpo)}, ${MESES_PT[mesNum - 1]}/${anoNum} (PA ${periodoPA})`);
 
-  if (modo === 'chrome') {
-    const sessao = await abrirSessaoChromeReal(ctx);
-    return await comSessao(sessao, (context, page) => rodarPassos(context, page, ctx, { esperarCaptcha: true }));
-  }
+  if (modo === 'chrome') return await emitirViaChromeReal(ctx);
 
-  if (modo === 'assistido') {
-    try {
-      log('Tentativa 1: Chromium oculto (headless)...');
-      const s1 = await abrirSessaoPlaywright(ctx, { headless: true });
-      return await comSessao(s1, (context, page) => rodarPassos(context, page, ctx, { esperarCaptcha: false }));
-    } catch (err) {
-      if (!(err instanceof CaptchaBloqueado)) throw err;
-      log('Captcha bloqueou o modo oculto. Abrindo o Chrome real para você resolver...');
-      const s2 = await abrirSessaoChromeReal(ctx);
-      return await comSessao(s2, (context, page) => rodarPassos(context, page, ctx, { esperarCaptcha: true }));
-    }
-  }
-
-  // 'headless' | 'headful' (Chromium empacotado)
+  // Modos com o Chromium empacotado (headless para testes/CI; headful raramente passa no captcha).
   const headless = modo !== 'headful';
   const s = await abrirSessaoPlaywright(ctx, { headless });
-  return await comSessao(s, (context, page) => rodarPassos(context, page, ctx, { esperarCaptcha: !headless }));
-}
-
-/** Executa `fn` com a sessão e garante o fechamento. */
-async function comSessao(sessao, fn) {
   try {
-    return await fn(sessao.context, sessao.page);
+    await identificarAutomatico(s.page, ctx, { esperarCaptcha: !headless });
+    return await rodarEmissao(s.context, s.page, ctx);
   } finally {
-    await sessao.fechar().catch(() => {});
+    await s.fechar().catch(() => {});
   }
 }
 
 // ---------------------------------------------------------------------------
-// Abertura de sessão
+// Modo 'chrome': navegador real, identificação manual, conexão só na FASE 2
 // ---------------------------------------------------------------------------
 
-/** Sessão com o Chromium empacotado (perfil persistente). */
+async function emitirViaChromeReal(ctx) {
+  const { cnpjLimpo, log } = ctx;
+  const exe = localizarNavegadorReal();
+  if (!exe) {
+    throw new Error(
+      'Não encontrei o Google Chrome (nem o Edge) instalado. Instale o Chrome ' +
+      '(https://www.google.com/chrome/) ou defina a variável CHROME_PATH apontando para o chrome.exe.'
+    );
+  }
+
+  const perfilChrome = path.join(ctx.perfil, 'chrome-real');
+  fs.mkdirSync(perfilChrome, { recursive: true });
+  try { fs.rmSync(path.join(perfilChrome, 'DevToolsActivePort'), { force: true }); } catch {}
+
+  log(`Abrindo o seu navegador: ${exe}`);
+  // O navegador abre como processo normal. A porta de depuração fica disponível,
+  // mas NINGUÉM se conecta durante a identificação — então não há rastro de
+  // automação para o hCaptcha detectar.
+  const proc = spawn(exe, [
+    '--remote-debugging-port=0',
+    `--user-data-dir=${perfilChrome}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--start-maximized',
+    URL_IDENTIFICACAO,
+  ], { detached: false, stdio: 'ignore' });
+  proc.on('error', (e) => log(`Falha ao iniciar o navegador: ${e.message}`));
+
+  try {
+    // Instruções para a FASE 1 (manual).
+    log('');
+    log('┌─ FAÇA A IDENTIFICAÇÃO NA JANELA DO NAVEGADOR ─────────────────────');
+    log(`│  1) Digite o CNPJ:  ${formatarCnpj(cnpjLimpo)}`);
+    log('│  2) Clique em "Continuar" e resolva o captcha, se aparecer.');
+    log('│  3) Aguarde chegar na tela com "Emitir Guia de Pagamento (DAS)".');
+    log('└──────────────────────────────────────────────────────────────────');
+
+    if (typeof ctx.confirmar === 'function') {
+      await ctx.confirmar(); // ex.: CLI aguarda o ENTER do usuário
+    }
+
+    // FASE 2: agora sim conecta a automação e detecta a identificação.
+    const porta = await esperarPortaCDP(perfilChrome, 20000);
+    log('Conectando ao navegador para continuar a emissão...');
+    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${porta}`);
+    try {
+      const context = browser.contexts()[0] || await browser.newContext();
+      const page = await encontrarPaginaIdentificada(context, ctx.timeoutIdentificacao, log);
+      page.setDefaultTimeout(45000);
+      return await rodarEmissao(context, page, ctx);
+    } finally {
+      await browser.close().catch(() => {}); // apenas desconecta o Playwright
+    }
+  } finally {
+    try { proc.kill(); } catch {}
+  }
+}
+
+/** Encontra a aba já identificada (com o menu de emissão). Aguarda se preciso. */
+async function encontrarPaginaIdentificada(context, timeout, log) {
+  const deadline = Date.now() + timeout;
+  let avisou = false;
+  while (Date.now() < deadline) {
+    for (const p of context.pages()) {
+      if (!p.url().includes('pgmei.app')) continue;
+      if (await p.locator(SELETOR_MENU_EMISSAO).count().catch(() => 0)) return p;
+    }
+    if (!avisou) {
+      log('Aguardando a identificação ser concluída na janela do navegador...');
+      avisou = true;
+    }
+    await esperar(1500);
+  }
+  throw new Error('Tempo esgotado aguardando a identificação (tela "Emitir Guia de Pagamento (DAS)").');
+}
+
+/** Aguarda o Chrome escrever DevToolsActivePort e devolve a porta CDP. */
+async function esperarPortaCDP(perfilChrome, timeout) {
+  const arquivo = path.join(perfilChrome, 'DevToolsActivePort');
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    try {
+      const porta = Number(fs.readFileSync(arquivo, 'utf8').trim().split('\n')[0]);
+      if (porta > 0) {
+        await sondarHttp(`http://127.0.0.1:${porta}/json/version`, 3000).catch(() => {});
+        return porta;
+      }
+    } catch { /* ainda não escreveu */ }
+    await esperar(250);
+  }
+  throw new Error('Não foi possível iniciar a depuração do navegador (porta CDP não abriu).');
+}
+
+function sondarHttp(url, timeout) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url, { timeout }, (res) => { res.resume(); resolve(res.statusCode); });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Sessão com o Chromium empacotado (modos headless/headful)
+// ---------------------------------------------------------------------------
+
 async function abrirSessaoPlaywright(ctx, { headless }) {
   const proxy = resolverProxy();
   const context = await chromium.launchPersistentContext(ctx.perfil, {
@@ -243,126 +311,40 @@ async function abrirSessaoPlaywright(ctx, { headless }) {
   return { context, page, fechar: () => context.close() };
 }
 
-/**
- * Sessão com o Chrome/Edge REAL: abre o navegador como processo normal (sem
- * flags de automação) e conecta via CDP. É a abordagem menos detectável pelo
- * hCaptcha.
- */
-async function abrirSessaoChromeReal(ctx) {
-  const exe = localizarNavegadorReal();
-  if (!exe) {
-    throw new Error(
-      'Não encontrei o Google Chrome (nem o Edge) instalado. Instale o Chrome ' +
-      '(https://www.google.com/chrome/) ou defina a variável CHROME_PATH apontando para o chrome.exe.'
-    );
-  }
-  ctx.log(`Abrindo o navegador real: ${exe}`);
-
-  // Perfil dedicado (não mexe no seu perfil pessoal do Chrome).
-  const perfilChrome = path.join(ctx.perfil, 'chrome-real');
-  fs.mkdirSync(perfilChrome, { recursive: true });
-  // Remove trava de sessão anterior, se houver.
-  try { fs.rmSync(path.join(perfilChrome, 'DevToolsActivePort'), { force: true }); } catch {}
-
-  const proc = spawn(exe, [
-    '--remote-debugging-port=0',
-    `--user-data-dir=${perfilChrome}`,
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--start-maximized',
-    URL_IDENTIFICACAO,
-  ], { detached: false, stdio: 'ignore' });
-
-  proc.on('error', (e) => ctx.log(`Falha ao iniciar o navegador: ${e.message}`));
-
-  // Descobre a porta CDP a partir do arquivo DevToolsActivePort.
-  const porta = await esperarPortaCDP(perfilChrome, 20000);
-  const endpoint = `http://127.0.0.1:${porta}`;
-  ctx.log('Conectando à sessão do navegador...');
-  const browser = await chromium.connectOverCDP(endpoint);
-
-  const context = browser.contexts()[0] || await browser.newContext();
-  // A aba inicial já abriu a identificação; usa-a (ou cria uma).
-  let page = context.pages().find((p) => p.url().includes('pgmei.app')) || context.pages()[0];
-  if (!page) page = await context.newPage();
-  page.setDefaultTimeout(45000);
-
-  const fechar = async () => {
-    await browser.close().catch(() => {}); // desconecta o Playwright
-    try { proc.kill(); } catch {}
-  };
-  return { context, page, fechar };
-}
-
-/** Aguarda o Chrome escrever DevToolsActivePort e devolve a porta CDP. */
-async function esperarPortaCDP(perfilChrome, timeout) {
-  const arquivo = path.join(perfilChrome, 'DevToolsActivePort');
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    try {
-      const conteudo = fs.readFileSync(arquivo, 'utf8').trim();
-      const porta = Number(conteudo.split('\n')[0]);
-      if (porta > 0) {
-        await sondarHttp(`http://127.0.0.1:${porta}/json/version`, 3000).catch(() => {});
-        return porta;
-      }
-    } catch { /* ainda não escreveu */ }
-    await esperar(250);
-  }
-  throw new Error('Não foi possível iniciar a depuração do navegador (porta CDP não abriu).');
-}
-
-function esperar(ms) { return new Promise((r) => setTimeout(r, ms)); }
-
-function sondarHttp(url, timeout) {
-  return new Promise((resolve, reject) => {
-    const req = http.get(url, { timeout }, (res) => { res.resume(); resolve(res.statusCode); });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Passos do fluxo (independentes do tipo de sessão)
-// ---------------------------------------------------------------------------
-
-async function rodarPassos(context, page, ctx, { esperarCaptcha }) {
-  const { cnpjLimpo, anoNum, mesNum, periodoPA, dir, timeoutCaptcha, log, aoAguardarCaptcha } = ctx;
-
-  // 1) Identificação
+/** FASE 1 automática (só para modos headless/headful — sujeita a bloqueio de captcha). */
+async function identificarAutomatico(page, ctx, { esperarCaptcha }) {
+  const { cnpjLimpo, log } = ctx;
   log('Acessando página de identificação...');
-  if (!page.url().includes('/Identificacao')) {
-    await page.goto(URL_IDENTIFICACAO, { waitUntil: 'domcontentloaded' });
-  } else {
-    await page.waitForLoadState('domcontentloaded').catch(() => {});
-  }
-
-  // 2) Preencher CNPJ e continuar
+  await page.goto(URL_IDENTIFICACAO, { waitUntil: 'domcontentloaded' });
   log('Preenchendo CNPJ...');
   await page.locator('#cnpj').fill(cnpjLimpo);
   await page.getByRole('button', { name: /Continuar/i }).click();
 
   const desfecho = await aguardarDesfechoIdentificacao(page);
   if (desfecho.tipo === 'captcha') {
-    if (!esperarCaptcha) {
-      throw new CaptchaBloqueado('Portal bloqueou por captcha (comportamento de robô).');
-    }
-    log('⚠️  Resolva o captcha/identificação na janela do navegador (digite o CNPJ e clique em Continuar, se preciso).');
-    log('    A automação continua sozinha assim que a identificação for aceita...');
-    if (typeof aoAguardarCaptcha === 'function') aoAguardarCaptcha();
-    await esperarIdentificacaoAceita(page, timeoutCaptcha, log);
+    if (!esperarCaptcha) throw new CaptchaBloqueado('Portal bloqueou por captcha (comportamento de robô).');
+    log('⚠️  Resolva o captcha/identificação na janela do navegador...');
+    await esperarIdentificacaoAceita(page, ctx.timeoutIdentificacao, log);
   } else if (desfecho.tipo === 'erro') {
     throw new Error(`O portal retornou um erro após informar o CNPJ: "${desfecho.mensagem}"`);
   }
+}
 
-  // 3) Emitir Guia de Pagamento (DAS)
+// ---------------------------------------------------------------------------
+// FASE 2: emissão (sem captcha) — comum a todos os modos
+// ---------------------------------------------------------------------------
+
+async function rodarEmissao(context, page, ctx) {
+  const { anoNum, mesNum, periodoPA, dir, cnpjLimpo, log } = ctx;
+
+  // Emitir Guia de Pagamento (DAS)
   log('Selecionando "Emitir Guia de Pagamento (DAS)"...');
   const linkEmissao = page.locator(SELETOR_MENU_EMISSAO);
   if (await linkEmissao.count()) await linkEmissao.first().click();
   else await page.goto(URL_EMISSAO, { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('domcontentloaded');
 
-  // 4) Selecionar o ano e OK
+  // Selecionar o ano e OK
   log(`Selecionando o ano-calendário ${anoNum}...`);
   await selecionarAno(page, anoNum, log);
   log('Confirmando o ano (Ok)...');
@@ -372,7 +354,7 @@ async function rodarPassos(context, page, ctx, { esperarCaptcha }) {
   ]);
   await page.waitForLoadState('domcontentloaded');
 
-  // 5) Marcar o mês e Apurar/Gerar DAS
+  // Marcar o mês e Apurar/Gerar DAS
   log(`Marcando o período ${MESES_PT[mesNum - 1]}/${anoNum}...`);
   const checkbox = page.locator(`input.paSelecionado[value="${periodoPA}"]`);
   if (!(await checkbox.count())) {
@@ -389,7 +371,7 @@ async function rodarPassos(context, page, ctx, { esperarCaptcha }) {
   ]);
   await page.waitForLoadState('domcontentloaded');
 
-  // 6) Nome, valor e PDF
+  // Nome, valor e PDF
   const nome = await extrairNome(page);
   const valor = await extrairValor(page);
   log(`Contribuinte: ${nome || '(não identificado)'}${valor ? ` — Valor: ${valor}` : ''}`);
@@ -409,15 +391,17 @@ async function rodarPassos(context, page, ctx, { esperarCaptcha }) {
   log(`PDF salvo em: ${pdfPath}`);
 
   return {
-    pdfPath,
-    fileName,
+    pdfPath, fileName,
     nome: nome || null,
     valor: valor || null,
     periodo: `${MESES_PT[mesNum - 1]}/${anoNum}`,
   };
 }
 
-/** Após "Continuar", determina: 'ok' | 'captcha' | 'erro'. */
+// ---------------------------------------------------------------------------
+// Detecção / helpers de página
+// ---------------------------------------------------------------------------
+
 async function aguardarDesfechoIdentificacao(page) {
   const deadline = Date.now() + 20000;
   while (Date.now() < deadline) {
@@ -425,14 +409,11 @@ async function aguardarDesfechoIdentificacao(page) {
     const info = await page.evaluate(() => {
       const texto = (document.body.innerText || '');
       const captcha = /Comportamento de Rob[oô]|Impedido por prote[cç][aã]o Captcha|13896/i.test(texto);
-      const desafio = Array.from(document.querySelectorAll('iframe[src*="hcaptcha"]'))
-        .some((f) => /challenge/i.test(f.src) &&
-          f.getBoundingClientRect().width > 50 && f.getBoundingClientRect().height > 50);
       const alerta = document.querySelector('.alert-danger, .validationSummary li, .field-validation-error');
       const msgErro = alerta ? (alerta.textContent || '').replace(/\s+/g, ' ').trim() : '';
-      return { captcha, desafio, msgErro };
+      return { captcha, msgErro };
     });
-    if (info.captcha || info.desafio) return { tipo: 'captcha' };
+    if (info.captcha) return { tipo: 'captcha' };
     if (info.msgErro && !/captcha/i.test(info.msgErro)) return { tipo: 'erro', mensagem: info.msgErro };
     await page.waitForTimeout(600);
   }
@@ -440,7 +421,6 @@ async function aguardarDesfechoIdentificacao(page) {
   return { tipo: 'captcha' };
 }
 
-/** Poll até a identificação ser aceita (menu de emissão aparecer). */
 async function esperarIdentificacaoAceita(page, timeout, log) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
@@ -453,7 +433,6 @@ async function esperarIdentificacaoAceita(page, timeout, log) {
   throw new Error('Tempo esgotado aguardando a resolução do captcha/identificação.');
 }
 
-/** Seleciona o ano no dropdown bootstrap-select (com fallback para o <select> nativo). */
 async function selecionarAno(page, anoNum, log) {
   const anoStr = String(anoNum);
   const botaoDropdown = page.locator('button[data-id="anoCalendarioSelect"]');
@@ -482,7 +461,6 @@ async function selecionarAno(page, anoNum, log) {
   throw new Error(`Não foi possível localizar o seletor de ano para escolher ${anoStr}.`);
 }
 
-/** Extrai o nome do contribuinte (li > strong "Nome:"). */
 async function extrairNome(page) {
   const nome = await page.evaluate(() => {
     const strongs = Array.from(document.querySelectorAll('li strong, strong'));
@@ -500,7 +478,6 @@ async function extrairNome(page) {
   return (nome || '').replace(/\s+/g, ' ').trim();
 }
 
-/** Extrai um valor monetário do DAS (informativo). */
 async function extrairValor(page) {
   const valor = await page.evaluate(() => {
     const nodes = Array.from(document.querySelectorAll('td, span, strong, li, b'));
@@ -515,7 +492,6 @@ async function extrairValor(page) {
   return (valor || '').trim();
 }
 
-/** Obtém o binário do PDF da guia. */
 async function baixarPdf(context, page, botaoImprimir, log) {
   const downloadPromise = page.waitForEvent('download', { timeout: 8000 }).catch(() => null);
   const [download] = await Promise.all([
@@ -528,7 +504,6 @@ async function baixarPdf(context, page, botaoImprimir, log) {
     for await (const chunk of stream) chunks.push(chunk);
     if (chunks.length) return Buffer.concat(chunks);
   }
-
   log('Obtendo o PDF via requisição autenticada...');
   const resp = await context.request.get(URL_IMPRIMIR);
   if (!resp.ok()) throw new Error(`Falha ao baixar o PDF (HTTP ${resp.status()}).`);
