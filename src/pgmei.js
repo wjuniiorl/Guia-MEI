@@ -400,49 +400,77 @@ async function identificarAutomatico(page, ctx, { esperarCaptcha }) {
 async function rodarEmissao(context, page, ctx) {
   const { anoNum, mesNum, periodoPA, dir, cnpjLimpo, log } = ctx;
 
+  // NOTA: NÃO usamos waitForLoadState('networkidle') — páginas do gov.br mantêm
+  // conexões abertas e a rede "nunca para", o que travava a automação. Em vez
+  // disso, esperamos os ELEMENTOS certos aparecerem em cada etapa.
+
   // Emitir Guia de Pagamento (DAS)
   log('Selecionando "Emitir Guia de Pagamento (DAS)"...');
   const linkEmissao = page.locator(SELETOR_MENU_EMISSAO);
   if (await linkEmissao.count()) await linkEmissao.first().click();
   else await page.goto(URL_EMISSAO, { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('domcontentloaded');
+
+  // Espera o seletor de ano aparecer.
+  await page
+    .locator('button[data-id="anoCalendarioSelect"], select#anoCalendarioSelect, select[name="anoCalendarioSelect"]')
+    .first().waitFor({ state: 'visible', timeout: 30000 });
 
   // Selecionar o ano e OK
   log(`Selecionando o ano-calendário ${anoNum}...`);
   await selecionarAno(page, anoNum, log);
   log('Confirmando o ano (Ok)...');
-  await Promise.all([
-    page.waitForLoadState('networkidle').catch(() => {}),
-    page.getByRole('button', { name: /^Ok$/i }).click(),
-  ]);
-  await page.waitForLoadState('domcontentloaded');
+  await page.getByRole('button', { name: /^Ok$/i }).click();
 
-  // Marcar o mês e Apurar/Gerar DAS
-  log(`Marcando o período ${MESES_PT[mesNum - 1]}/${anoNum}...`);
+  // Espera a tabela de períodos carregar (o checkbox do mês aparecer).
+  log('Aguardando os períodos de apuração carregarem...');
   const checkbox = page.locator(`input.paSelecionado[value="${periodoPA}"]`);
-  if (!(await checkbox.count())) {
+  try {
+    await checkbox.first().waitFor({ state: 'attached', timeout: 30000 });
+  } catch {
     throw new Error(
-      `O período ${MESES_PT[mesNum - 1]}/${anoNum} (${periodoPA}) não foi encontrado na lista de apuração. ` +
+      `O período ${MESES_PT[mesNum - 1]}/${anoNum} (${periodoPA}) não apareceu na lista de apuração. ` +
       `Verifique se o mês já está disponível para emissão neste ano.`
     );
   }
-  await checkbox.first().check();
-  log('Clicando em "Apurar/Gerar DAS"...');
-  await Promise.all([
-    page.waitForLoadState('networkidle').catch(() => {}),
-    page.getByRole('button', { name: /Apurar\/Gerar DAS/i }).click(),
-  ]);
-  await page.waitForLoadState('domcontentloaded');
 
-  // Nome, valor e PDF
+  // Marcar o mês (o input pode estar coberto por um label — usa check e, se
+  // falhar, clica via JS).
+  log(`Marcando o período ${MESES_PT[mesNum - 1]}/${anoNum}...`);
+  try {
+    await checkbox.first().check({ timeout: 10000 });
+  } catch {
+    await checkbox.first().evaluate((el) => {
+      el.checked = true;
+      el.dispatchEvent(new Event('click', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+
+  // Apurar/Gerar DAS
+  log('Clicando em "Apurar/Gerar DAS"...');
+  await page.getByRole('button', { name: /Apurar\/Gerar DAS/i }).click();
+
+  // Espera o botão "Imprimir/Visualizar PDF" aparecer (tela de resultado).
+  log('Aguardando a geração do DAS...');
+  const botaoImprimir = page.locator(`a[href="/SimplesNacional/Aplicacoes/ATSPO/pgmei.app/emissao/imprimir"]`);
+  try {
+    await botaoImprimir.first().waitFor({ state: 'attached', timeout: 45000 });
+  } catch {
+    // Talvez tenha aparecido um aviso/erro na tela.
+    const aviso = await page.evaluate(() => {
+      const a = document.querySelector('.alert, .alert-danger, .validationSummary');
+      return a ? (a.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+    });
+    throw new Error(
+      'Botão "Imprimir/Visualizar PDF" não apareceu — a apuração pode não ter sido gerada.' +
+      (aviso ? ` Mensagem da tela: "${aviso}"` : '')
+    );
+  }
+
+  // Nome e valor (informativo)
   const nome = await extrairNome(page);
   const valor = await extrairValor(page);
   log(`Contribuinte: ${nome || '(não identificado)'}${valor ? ` — Valor: ${valor}` : ''}`);
-
-  const botaoImprimir = page.locator(`a[href="/SimplesNacional/Aplicacoes/ATSPO/pgmei.app/emissao/imprimir"]`);
-  if (!(await botaoImprimir.count())) {
-    throw new Error('Botão "Imprimir/Visualizar PDF" não encontrado — a apuração pode não ter sido gerada.');
-  }
 
   log('Baixando o PDF da guia...');
   const pdfBuffer = await baixarPdf(context, page, botaoImprimir, log);
@@ -556,7 +584,19 @@ async function extrairValor(page) {
 }
 
 async function baixarPdf(context, page, botaoImprimir, log) {
-  const downloadPromise = page.waitForEvent('download', { timeout: 8000 }).catch(() => null);
+  // Caminho principal: o link "Imprimir" é um GET direto que devolve o PDF.
+  // Buscamos pela sessão do navegador (mesmos cookies) — sem abrir aba de PDF.
+  try {
+    const resp = await context.request.get(URL_IMPRIMIR);
+    if (resp.ok()) {
+      const body = await resp.body();
+      if (body.length > 4 && body.slice(0, 4).toString('latin1') === '%PDF') return body;
+    }
+  } catch { /* tenta o caminho por clique abaixo */ }
+
+  // Alternativa: clicar no botão e capturar um evento de download.
+  log('Tentando baixar via clique no botão...');
+  const downloadPromise = page.waitForEvent('download', { timeout: 10000 }).catch(() => null);
   const [download] = await Promise.all([
     downloadPromise,
     botaoImprimir.first().click().catch(() => {}),
@@ -567,13 +607,18 @@ async function baixarPdf(context, page, botaoImprimir, log) {
     for await (const chunk of stream) chunks.push(chunk);
     if (chunks.length) return Buffer.concat(chunks);
   }
-  log('Obtendo o PDF via requisição autenticada...');
-  const resp = await context.request.get(URL_IMPRIMIR);
-  if (!resp.ok()) throw new Error(`Falha ao baixar o PDF (HTTP ${resp.status()}).`);
-  const body = await resp.body();
-  const isPdf = body.length > 4 && body.slice(0, 4).toString('latin1') === '%PDF';
-  if (!isPdf) throw new Error('O conteúdo retornado não parece ser um PDF. A sessão pode ter expirado.');
-  return body;
+
+  // Última tentativa: nova aba com o PDF aberto.
+  for (const p of context.pages()) {
+    if (p.url().includes('/emissao/imprimir')) {
+      const r = await context.request.get(p.url());
+      if (r.ok()) {
+        const b = await r.body();
+        if (b.slice(0, 4).toString('latin1') === '%PDF') return b;
+      }
+    }
+  }
+  throw new Error('Não consegui obter o PDF da guia. A apuração foi gerada?');
 }
 
 export { MESES_PT };
