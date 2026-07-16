@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Guia-MEI · Emissão do DAS</title>
+  <style>
+    :root {
+      --azul: #1351b4;
+      --azul-escuro: #0c326f;
+      --verde: #168821;
+      --cinza: #f2f2f2;
+      --borda: #d0d0d0;
+      --texto: #1c1c1c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      background: linear-gradient(160deg, #eef3fb 0%, #f7f9fc 100%);
+      color: var(--texto);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: #fff;
+      width: 100%;
+      max-width: 480px;
+      border-radius: 14px;
+      box-shadow: 0 10px 40px rgba(19, 81, 180, 0.12);
+      overflow: hidden;
+    }
+    header {
+      background: var(--azul);
+      color: #fff;
+      padding: 22px 28px;
+    }
+    header h1 { margin: 0; font-size: 1.35rem; }
+    header p { margin: 6px 0 0; font-size: .85rem; opacity: .9; }
+    form { padding: 24px 28px 28px; }
+    label { display: block; font-weight: 600; font-size: .85rem; margin: 14px 0 6px; }
+    input, select {
+      width: 100%;
+      padding: 11px 12px;
+      font-size: 1rem;
+      border: 1px solid var(--borda);
+      border-radius: 8px;
+      background: #fff;
+      transition: border-color .15s;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--azul); }
+    .linha { display: flex; gap: 12px; }
+    .linha > div { flex: 1; }
+    button {
+      margin-top: 22px;
+      width: 100%;
+      padding: 13px;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #fff;
+      background: var(--verde);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    button:hover:not(:disabled) { background: #0f6b1a; }
+    button:disabled { background: #9bb; cursor: not-allowed; }
+    .status {
+      margin-top: 18px;
+      padding: 14px;
+      border-radius: 8px;
+      font-size: .9rem;
+      display: none;
+    }
+    .status.info { display: block; background: #eaf1fb; color: var(--azul-escuro); }
+    .status.erro { display: block; background: #fdeaea; color: #a4262c; }
+    .status.ok   { display: block; background: #e9f6ec; color: var(--verde); }
+    .spinner {
+      display: inline-block; width: 16px; height: 16px;
+      border: 2px solid rgba(19,81,180,.3); border-top-color: var(--azul);
+      border-radius: 50%; animation: girar .8s linear infinite; vertical-align: -3px;
+      margin-right: 8px;
+    }
+    @keyframes girar { to { transform: rotate(360deg); } }
+    footer { text-align: center; font-size: .75rem; color: #888; padding: 0 28px 20px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <header>
+      <h1>Guia-MEI · Emissão do DAS</h1>
+      <p>Gere e baixe a Guia de Pagamento (DAS) do MEI automaticamente.</p>
+    </header>
+    <form id="form">
+      <label for="cnpj">CNPJ do MEI</label>
+      <input id="cnpj" name="cnpj" type="text" inputmode="numeric" placeholder="00.000.000/0000-00"
+             autocomplete="off" required />
+
+      <div class="linha">
+        <div>
+          <label for="ano">Ano-calendário</label>
+          <select id="ano" name="ano" required></select>
+        </div>
+        <div>
+          <label for="mes">Mês de apuração</label>
+          <select id="mes" name="mes" required></select>
+        </div>
+      </div>
+
+      <button id="btn" type="submit">Emitir e baixar DAS</button>
+      <div id="status" class="status"></div>
+    </form>
+    <footer>Uso pessoal · dados enviados apenas ao portal oficial da Receita Federal.</footer>
+  </div>
+
+  <script>
+    const form = document.getElementById('form');
+    const btn = document.getElementById('btn');
+    const status = document.getElementById('status');
+    const selAno = document.getElementById('ano');
+    const selMes = document.getElementById('mes');
+    const inputCnpj = document.getElementById('cnpj');
+
+    // Preenche anos (ano atual e 5 anteriores)
+    const anoAtual = new Date().getFullYear();
+    for (let a = anoAtual; a >= anoAtual - 5; a--) {
+      const o = document.createElement('option');
+      o.value = a; o.textContent = a;
+      selAno.appendChild(o);
+    }
+
+    // Preenche meses
+    fetch('/api/meses').then(r => r.json()).then(meses => {
+      const mesAtual = new Date().getMonth() + 1;
+      for (const m of meses) {
+        const o = document.createElement('option');
+        o.value = m.valor; o.textContent = m.nome;
+        if (m.valor === mesAtual) o.selected = true;
+        selMes.appendChild(o);
+      }
+    });
+
+    // Máscara simples de CNPJ
+    inputCnpj.addEventListener('input', () => {
+      let v = inputCnpj.value.replace(/\D/g, '').slice(0, 14);
+      v = v.replace(/^(\d{2})(\d)/, '$1.$2')
+           .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+           .replace(/\.(\d{3})(\d)/, '.$1/$2')
+           .replace(/(\d{4})(\d)/, '$1-$2');
+      inputCnpj.value = v;
+    });
+
+    function setStatus(tipo, html) {
+      status.className = 'status ' + tipo;
+      status.innerHTML = html;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const cnpj = inputCnpj.value.replace(/\D/g, '');
+      const ano = selAno.value;
+      const mes = selMes.value;
+
+      if (cnpj.length !== 14) {
+        setStatus('erro', 'Informe um CNPJ com 14 dígitos.');
+        return;
+      }
+
+      btn.disabled = true;
+      setStatus('info', '<span class="spinner"></span> Emitindo a guia no portal da Receita...<br>' +
+        '<small>Se o site pedir verificação, uma janela do navegador vai abrir para você resolver o captcha — depois a emissão continua sozinha.</small>');
+
+      try {
+        const resp = await fetch('/api/emitir', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cnpj, ano, mes }),
+        });
+
+        if (!resp.ok) {
+          const erro = await resp.json().catch(() => ({ erro: 'Erro desconhecido.' }));
+          setStatus('erro', '❌ ' + (erro.erro || 'Falha na emissão.'));
+          return;
+        }
+
+        const nome = decodeURIComponent(resp.headers.get('X-Contribuinte') || '');
+        const periodo = decodeURIComponent(resp.headers.get('X-Periodo') || '');
+        const valor = decodeURIComponent(resp.headers.get('X-Valor') || '');
+
+        const blob = await resp.blob();
+        const cd = resp.headers.get('Content-Disposition') || '';
+        const m = cd.match(/filename="([^"]+)"/);
+        const fileName = m ? decodeURIComponent(m[1]) : 'DAS.pdf';
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = fileName;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+
+        setStatus('ok',
+          `✅ DAS emitido com sucesso!<br>` +
+          (nome ? `<strong>${nome}</strong><br>` : '') +
+          (periodo ? `Período: ${periodo}<br>` : '') +
+          (valor ? `Valor: ${valor}<br>` : '') +
+          `Arquivo: ${fileName}`);
+      } catch (err) {
+        setStatus('erro', '❌ ' + err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

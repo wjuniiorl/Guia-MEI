@@ -1,0 +1,28 @@
+{
+  "name": "guia-mei",
+  "version": "1.0.0",
+  "description": "Automação para emissão do DAS (Guia de Pagamento) do MEI no portal do Simples Nacional / PGMEI usando Playwright.",
+  "type": "module",
+  "main": "src/pgmei.js",
+  "bin": {
+    "guia-mei": "src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "web": "node src/server.js",
+    "cli": "node src/cli.js"
+  },
+  "keywords": [
+    "mei",
+    "das",
+    "pgmei",
+    "simples-nacional",
+    "playwright",
+    "automacao"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "playwright": "^1.49.1"
+  }
+}

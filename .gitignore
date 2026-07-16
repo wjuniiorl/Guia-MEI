@@ -1,0 +1,8 @@
+node_modules/
+downloads/
+.perfil-chromium/
+*.pdf
+_probe.mjs
+.DS_Store
+npm-debug.log*
+.env
