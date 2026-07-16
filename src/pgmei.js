@@ -153,6 +153,8 @@ export async function emitirDAS(opts = {}) {
     onLog, confirmar,
     novoPerfil = false,  // (modo chrome) recomeça o perfil dedicado do zero
     auto = false,        // (modo chrome) preenche CNPJ e clica Continuar sozinho (experimental)
+    minimizar = false,   // (modo chrome) abre a janela minimizada ("invisível", mas passa no captcha)
+    chromeHeadless = false, // (modo chrome) headless de verdade — EXPERIMENTAL, costuma ser bloqueado
   } = opts;
 
   const log = (msg) => {
@@ -172,7 +174,10 @@ export async function emitirDAS(opts = {}) {
   const perfil = perfilDir || path.resolve(process.cwd(), '.perfil-chromium');
   fs.mkdirSync(perfil, { recursive: true });
 
-  const ctx = { cnpjLimpo, anoNum, mesNum, periodoPA, dir, perfil, timeoutIdentificacao, log, confirmar, novoPerfil, autoInicio: auto };
+  const ctx = {
+    cnpjLimpo, anoNum, mesNum, periodoPA, dir, perfil, timeoutIdentificacao, log, confirmar,
+    novoPerfil, autoInicio: auto, minimizar, headless: chromeHeadless,
+  };
   log(`Iniciando emissão do DAS — CNPJ ${formatarCnpj(cnpjLimpo)}, ${MESES_PT[mesNum - 1]}/${anoNum} (PA ${periodoPA})`);
 
   if (modo === 'chrome') return await emitirViaChromeReal(ctx);
@@ -222,14 +227,21 @@ async function emitirViaChromeReal(ctx) {
     '--lang=pt-BR',
     '--no-first-run',
     '--no-default-browser-check',
-    URL_IDENTIFICACAO,
   ];
+  // EXPERIMENTAL: headless costuma ser bloqueado pelo hCaptcha (impressão
+  // digital de robô). Mantido como opção para o usuário testar.
+  if (ctx.headless) {
+    args.push('--headless=new', '--window-size=1280,900');
+  }
+  args.push(URL_IDENTIFICACAO);
 
-  log(`Abrindo o seu navegador: ${exe}`);
+  log(ctx.headless
+    ? 'Abrindo o navegador em modo headless (experimental)...'
+    : `Abrindo o seu navegador: ${exe}`);
   // CRÍTICO: o Chrome é aberto DESTACADO do Node (como se você tivesse digitado
   // o comando no terminal). Quando o Node abre o Chrome como processo filho, o
   // hCaptcha detecta e bloqueia ("Comportamento de Robô"). Destacar resolve.
-  const proc = lancarNavegadorDestacado(exe, args, log);
+  const proc = lancarNavegadorDestacado(exe, args, log, { minimizar: ctx.minimizar && !ctx.headless });
 
   const fecharNavegador = async (browser, page) => {
     try {
@@ -325,10 +337,12 @@ async function encontrarPaginaComCampo(context, seletor, timeout) {
  * filho — o que o hCaptcha detecta). No Windows usa `cmd /c start`, replicando
  * um lançamento manual pelo usuário.
  */
-function lancarNavegadorDestacado(exe, args, log) {
+function lancarNavegadorDestacado(exe, args, log, { minimizar = false } = {}) {
   let proc;
   if (process.platform === 'win32') {
-    const linha = `start "PGMEI" "${exe}" ` + args.map((a) => `"${a}"`).join(' ');
+    // /min abre a janela minimizada (fica "invisível" sem ser headless).
+    const min = minimizar ? '/min ' : '';
+    const linha = `start "PGMEI" ${min}"${exe}" ` + args.map((a) => `"${a}"`).join(' ');
     proc = spawn('cmd.exe', ['/c', linha], { stdio: 'ignore', windowsVerbatimArguments: true });
   } else {
     proc = spawn(exe, args, { stdio: 'ignore', detached: true });

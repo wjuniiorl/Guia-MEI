@@ -42,9 +42,14 @@ Opções:
   --mes,  -m   Mês de apuração (1..12)               [obrigatório]
   --out,  -o   Diretório de saída (default: ./downloads)
   --modo       chrome | headless | headful (default: chrome)
-  --auto       (experimental) preenche o CNPJ e clica Continuar sozinho
+  --auto       preenche o CNPJ e clica Continuar sozinho
+  --min        abre a janela minimizada ("invisível", mas passa no captcha)
+  --headless   (experimental) headless de verdade — costuma ser bloqueado
   --novo-perfil  Recomeça o perfil dedicado do zero (use se algo travar)
   --help, -h   Mostra esta ajuda
+
+Dica: para rodar sem a janela na sua frente, use  --auto --min
+(o Chrome abre minimizado, passa no captcha e fecha sozinho).
 
 Modo 'chrome' (padrão): abre o seu Chrome/Edge real com um perfil dedicado e
 limpo. Você faz a identificação (CNPJ + Continuar + captcha) e tecla ENTER aqui;
@@ -97,11 +102,14 @@ async function main() {
       modo,
       outputDir: args.out,
       novoPerfil: Boolean(args['novo-perfil']),
-      auto: Boolean(args.auto),
+      // headless de verdade exige preenchimento automático (não há janela p/ interagir).
+      auto: Boolean(args.auto) || Boolean(args.headless),
+      minimizar: Boolean(args.min),
+      chromeHeadless: Boolean(args.headless),
       onLog: (msg) => console.log(`  › ${msg}`),
-      // No modo chrome manual, aguarda o ENTER após a identificação. No modo
-      // --auto a automação preenche/clica sozinha, então não pede ENTER.
-      confirmar: (modo === 'chrome' && !args.auto)
+      // No modo chrome manual, aguarda o ENTER após a identificação. Com --auto
+      // ou --headless a automação preenche/clica sozinha, então não pede ENTER.
+      confirmar: (modo === 'chrome' && !args.auto && !args.headless)
         ? () => esperarEnter('\n  ➤ Depois de estar identificado na janela, tecle ENTER aqui para continuar... ')
         : undefined,
     });
