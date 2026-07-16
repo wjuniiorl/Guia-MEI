@@ -94,7 +94,28 @@ node src/cli.js -c 03351763000181 -a 2026 -m 6
 O PDF é salvo como, por exemplo:
 `downloads/03.351.763 MARIA DO ROSARIO RUIZ SOUZA - Junho-2026.pdf`
 
-## Uso — Interface web (recomendado)
+## Uso — Interface desktop (Python)
+
+Janela nativa e moderna (CustomTkinter) que usa o motor Node por baixo.
+
+```bash
+pip install -r requirements.txt   # instala o customtkinter (uma vez)
+python app.py                     # abre a janela
+```
+
+No Windows, dá para abrir com **duplo clique** em `abrir-interface.bat`.
+
+Na janela:
+- **Aba "Emitir DAS"**: marque **um ou vários clientes**, escolha o **ano** e os
+  **meses**, ative *"Janela invisível"* se quiser, e clique em **Emitir DAS**.
+  O progresso aparece ao vivo; os PDFs vão para `downloads/ANO/MÊS/`.
+- **Aba "Clientes"**: adicionar / editar / excluir e **importar** uma lista.
+
+> Requer **Python 3.9+** e **Node.js** instalados. Os clientes são os mesmos da
+> interface web (arquivo `dados/clientes.json`), então os dois modos ficam
+> sincronizados.
+
+## Uso — Interface web (alternativa)
 
 ```bash
 npm start

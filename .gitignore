@@ -4,6 +4,10 @@ downloads/
 dados/
 *.pdf
 _probe.mjs
+__pycache__/
+*.pyc
+venv/
+.venv/
 .DS_Store
 npm-debug.log*
 .env
