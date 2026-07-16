@@ -10,12 +10,13 @@
 //   --ano,  -a   Ano-calendário (ex: 2026)             [obrigatório]
 //   --mes,  -m   Mês de apuração (1..12)               [obrigatório]
 //   --out,  -o   Diretório de saída (default: ./downloads)
-//   --modo       assistido | headless | headful (default: assistido)
+//   --modo       chrome | assistido | headless | headful (default: chrome)
 //   --help, -h   Mostra esta ajuda
 //
-// Sobre o captcha: o portal usa hCaptcha invisível. No modo "assistido"
-// (padrão), a automação tenta oculta; se o captcha desafiar, abre a janela do
-// navegador para você resolver e continua sozinha de onde parou.
+// Sobre o captcha: o portal usa hCaptcha invisível que bloqueia navegadores de
+// automação. No modo "chrome" (padrão), a ferramenta abre o SEU Chrome/Edge
+// real e se conecta a ele — você resolve a identificação/captcha uma vez e a
+// automação assume o resto (ano, mês, geração e download do PDF).
 
 import { emitirDAS, cnpjValido } from './pgmei.js';
 
@@ -51,11 +52,12 @@ Opções:
   --ano,  -a   Ano-calendário (ex: 2026)             [obrigatório]
   --mes,  -m   Mês de apuração (1..12)               [obrigatório]
   --out,  -o   Diretório de saída (default: ./downloads)
-  --modo       assistido | headless | headful (default: assistido)
+  --modo       chrome | assistido | headless | headful (default: chrome)
   --help, -h   Mostra esta ajuda
 
-Captcha: no modo "assistido", se o hCaptcha desafiar, a janela do navegador
-abre para você resolver e a automação continua de onde parou.
+Captcha: no modo "chrome" (padrão), a ferramenta abre o seu Chrome/Edge real e
+se conecta a ele. Você resolve a identificação/captcha uma vez e a automação
+assume o resto. Use CHROME_PATH para apontar o executável, se necessário.
 
 Exemplo:
   node src/cli.js -c 03351763000181 -a 2026 -m 6
@@ -85,7 +87,7 @@ async function main() {
     process.exit(1);
   }
 
-  const modo = ['assistido', 'headless', 'headful'].includes(args.modo) ? args.modo : 'assistido';
+  const modo = ['chrome', 'assistido', 'headless', 'headful'].includes(args.modo) ? args.modo : 'chrome';
 
   try {
     const resultado = await emitirDAS({

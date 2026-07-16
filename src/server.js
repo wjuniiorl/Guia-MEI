@@ -19,7 +19,7 @@ const PORT = process.env.PORT || 3000;
 // Modo do navegador: assistido (padrão) | headless | headful.
 // No modo assistido, se o hCaptcha desafiar, a janela do navegador abre na
 // máquina onde o servidor roda para o usuário resolver.
-const MODO = ['assistido', 'headless', 'headful'].includes(process.env.MODO) ? process.env.MODO : 'assistido';
+const MODO = ['chrome', 'assistido', 'headless', 'headful'].includes(process.env.MODO) ? process.env.MODO : 'chrome';
 
 app.use(express.json());
 app.use(express.static(PUBLIC_DIR));

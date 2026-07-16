@@ -10,25 +10,40 @@ Funciona por **linha de comando (CLI)** e por **interface web**.
 
 ## ⚠️ Importante: captcha (hCaptcha)
 
-O portal do PGMEI é protegido por **hCaptcha invisível** na tela de
-identificação. Ele analisa o comportamento e **bloqueia acessos automatizados**
-(o portal responde: *"Impedido por proteção Captcha. Comportamento de Robô"*).
+A tela de identificação do PGMEI é protegida por **hCaptcha invisível** que
+**detecta e bloqueia navegadores de automação** (Playwright/Selenium) — muitas
+vezes sem nem exibir um desafio, apenas recusando:
+*"Impedido por proteção Captcha. Comportamento de Robô"*.
 
-Por isso a automação usa o **modo assistido** (padrão):
+Por isso o **modo padrão é `chrome`**, que usa o **seu Chrome (ou Edge) real**:
 
-1. Tenta emitir de forma **oculta (headless)**, aproveitando os cookies já
-   salvos no perfil.
-2. **Se** o captcha desafiar, a **janela real do navegador abre** para você
-   resolver o captcha manualmente.
-3. Assim que a identificação é aceita, a automação **continua sozinha** de onde
-   parou (escolhe o ano, marca o mês, gera e baixa o PDF).
+1. A ferramenta **abre o seu Chrome/Edge de verdade** (como um navegador normal,
+   sem flags de automação) e **se conecta** a ele.
+2. Ela **preenche o CNPJ** e clica em Continuar. Se o captcha aparecer, **você
+   resolve** na janela (é a única etapa manual).
+3. Assim que a identificação é aceita, a automação **assume sozinha**: escolhe o
+   ano, marca o mês, gera e baixa o PDF.
 
-Um **perfil persistente** (`.perfil-chromium/`) guarda os cookies, o que
-costuma **reduzir a frequência** dos desafios nas execuções seguintes.
+Como o navegador não nasce marcado como automação, o hCaptcha tem **muito mais
+chance de liberar** (ou de mostrar um desafio *solucionável* em vez do bloqueio).
+Um **perfil dedicado** (`.perfil-chromium/chrome-real`) guarda os cookies,
+reduzindo desafios nas próximas execuções.
 
-> Numa máquina normal (IP residencial + navegador visível), o hCaptcha invisível
-> muitas vezes passa **sem desafio nenhum**. O bloqueio é mais comum em
-> servidores/IPs de datacenter.
+> Nada é 100% garantido contra o hCaptcha: se ainda assim bloquear, você pode
+> fazer **toda** a identificação manualmente na janela que abriu — a automação
+> espera e continua a partir do momento em que você estiver identificado.
+
+### Modos disponíveis (`--modo`)
+
+| Modo        | O que faz                                                                 |
+|-------------|---------------------------------------------------------------------------|
+| `chrome`    | **(padrão)** Abre o Chrome/Edge real e conecta. Melhor contra o captcha.   |
+| `assistido` | Tenta o Chromium oculto; se bloquear, cai para o Chrome real.             |
+| `headless`  | Chromium oculto (para testes/CI; falha se o captcha desafiar).            |
+| `headful`   | Chromium empacotado com janela (costuma ser bloqueado pelo hCaptcha).     |
+
+> Se a ferramenta não encontrar o Chrome/Edge automaticamente, aponte o caminho
+> com a variável `CHROME_PATH` (ex.: `set CHROME_PATH=C:\caminho\chrome.exe`).
 
 ---
 
@@ -58,7 +73,7 @@ Opções:
 | `--ano`, `-a`  | Ano-calendário, ex.: `2026` **[obrigatório]**        |
 | `--mes`, `-m`  | Mês de apuração, `1`..`12` **[obrigatório]**         |
 | `--out`, `-o`  | Diretório de saída (padrão: `./downloads`)           |
-| `--modo`       | `assistido` (padrão), `headless` ou `headful`        |
+| `--modo`       | `chrome` (padrão), `assistido`, `headless`, `headful`|
 | `--help`, `-h` | Ajuda                                                |
 
 Exemplo — DAS de **Junho/2026** (que vence em julho):
@@ -82,10 +97,11 @@ para você resolver; ao final o PDF é baixado automaticamente.
 
 Variáveis de ambiente:
 
-| Variável | Descrição                                             |
-|----------|-------------------------------------------------------|
-| `PORT`   | Porta do servidor (padrão `3000`)                     |
-| `MODO`   | `assistido` (padrão), `headless` ou `headful`         |
+| Variável      | Descrição                                              |
+|---------------|--------------------------------------------------------|
+| `PORT`        | Porta do servidor (padrão `3000`)                      |
+| `MODO`        | `chrome` (padrão), `assistido`, `headless`, `headful`  |
+| `CHROME_PATH` | Caminho do Chrome/Edge, se não for detectado           |
 
 > A interface web executa o navegador **na mesma máquina do servidor**. Rode
 > localmente para que a janela do captcha apareça na sua tela.
