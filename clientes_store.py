@@ -13,6 +13,19 @@ RAIZ = os.path.dirname(os.path.abspath(__file__))
 ARQUIVO = os.path.join(RAIZ, "dados", "clientes.json")
 SEED = os.path.join(RAIZ, "clientes-iniciais.json")
 
+# CNPJs que começam ATIVOS na primeira vez (o resto começa inativo). Depois
+# disso, o usuário liga/desliga cada um pela interface. Só afeta dados antigos
+# (sem o campo "ativo") — não sobrescreve escolhas já feitas.
+ATIVOS_INICIAIS = {
+    "29249163000194",  # Ariane
+    "24155623000100",  # Artieli
+    "03351763000175",  # Maria do Rosario
+    "20767080000112",  # Maria Madalena
+    "49587812000174",  # Nithele
+    "49398137000135",  # Paulo Pistori
+    "55590268000112",  # Priscilla Godoy
+}
+
 
 def limpar_cnpj(cnpj: str) -> str:
     return re.sub(r"\D", "", cnpj or "")
@@ -62,9 +75,19 @@ def _semear_se_necessario():
         c = limpar_cnpj(s.get("cnpj", ""))
         if cnpj_valido(c) and c not in vistos:
             vistos.add(c)
-            lista.append({"id": str(uuid.uuid4()), "nome": str(s.get("nome", "")).strip(), "cnpj": c})
+            lista.append({"id": str(uuid.uuid4()), "nome": str(s.get("nome", "")).strip(),
+                          "cnpj": c, "ativo": c in ATIVOS_INICIAIS})
     if lista:
         _salvar(lista)
+
+
+def _migrar_ativos(lista) -> bool:
+    """Dados antigos sem o campo 'ativo' recebem a configuração inicial."""
+    if any("ativo" not in c for c in lista):
+        for c in lista:
+            c["ativo"] = limpar_cnpj(c["cnpj"]) in ATIVOS_INICIAIS
+        return True
+    return False
 
 
 def _salvar(lista):
@@ -80,9 +103,34 @@ def listar():
     try:
         with open(ARQUIVO, encoding="utf-8") as f:
             dados = json.load(f)
-        return dados if isinstance(dados, list) else []
+        if not isinstance(dados, list):
+            return []
     except Exception:
         return []
+    if _migrar_ativos(dados):
+        _salvar(dados)
+    return dados
+
+
+def listar_ativos():
+    return [c for c in listar() if c.get("ativo", True)]
+
+
+def set_ativo(id_, ativo):
+    lista = listar()
+    for c in lista:
+        if c["id"] == id_:
+            c["ativo"] = bool(ativo)
+            _salvar(lista)
+            return c
+    raise ValueError("Cliente não encontrado.")
+
+
+def set_todos_ativos(ativo):
+    lista = listar()
+    for c in lista:
+        c["ativo"] = bool(ativo)
+    _salvar(lista)
 
 
 def _validar(nome, cnpj):
@@ -100,7 +148,7 @@ def adicionar(nome, cnpj):
     lista = listar()
     if any(limpar_cnpj(x["cnpj"]) == c for x in lista):
         raise ValueError("Já existe um cliente com esse CNPJ.")
-    cliente = {"id": str(uuid.uuid4()), "nome": nome_l, "cnpj": c}
+    cliente = {"id": str(uuid.uuid4()), "nome": nome_l, "cnpj": c, "ativo": True}
     lista.append(cliente)
     _salvar(lista)
     return cliente
@@ -148,7 +196,7 @@ def importar_texto(texto: str):
         if cnpj in existentes:
             ignorados.append((linha, "CNPJ já cadastrado"))
             continue
-        lista.append({"id": str(uuid.uuid4()), "nome": nome, "cnpj": cnpj})
+        lista.append({"id": str(uuid.uuid4()), "nome": nome, "cnpj": cnpj, "ativo": True})
         existentes.add(cnpj)
         adicionados += 1
     _salvar(lista)

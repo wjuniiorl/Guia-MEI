@@ -151,19 +151,33 @@ class App(ctk.CTk):
         listf.grid(row=2, column=0, sticky="nsew")
         listf.grid_rowconfigure(1, weight=1)
         listf.grid_columnconfigure(0, weight=1)
-        self.lbl_qtd = ctk.CTkLabel(listf, text="Clientes cadastrados", font=("Segoe UI", 13, "bold"))
-        self.lbl_qtd.grid(row=0, column=0, sticky="w", padx=12, pady=(10, 2))
+        topo = ctk.CTkFrame(listf, fg_color="transparent")
+        topo.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 2))
+        topo.grid_columnconfigure(0, weight=1)
+        self.lbl_qtd = ctk.CTkLabel(topo, text="Clientes cadastrados", font=("Segoe UI", 13, "bold"))
+        self.lbl_qtd.grid(row=0, column=0, sticky="w")
+        ctk.CTkButton(topo, text="Ativar todos", width=100, height=26,
+                      command=lambda: self._set_todos(True)).grid(row=0, column=1, padx=3)
+        ctk.CTkButton(topo, text="Desativar todos", width=110, height=26, fg_color="gray40",
+                      command=lambda: self._set_todos(False)).grid(row=0, column=2, padx=3)
         self.lista_gerenciar = ctk.CTkScrollableFrame(listf)
         self.lista_gerenciar.grid(row=1, column=0, sticky="nsew", padx=8, pady=8)
 
     # -------------------------------------------------------------- Dados
     def _carregar_clientes(self):
-        clientes = store.listar()
-        # aba emitir (checkboxes)
+        self._carregar_emitir()
+        self._carregar_gerenciar()
+
+    def _carregar_emitir(self):
+        # Só clientes ATIVOS aparecem para emitir.
+        ativos = store.listar_ativos()
         for w in self.lista_clientes.winfo_children():
             w.destroy()
         self.check_clientes.clear()
-        for c in clientes:
+        if not ativos:
+            ctk.CTkLabel(self.lista_clientes, text="Nenhum cliente ativo.\nAtive na aba Clientes.",
+                         text_color="gray").pack(anchor="w", padx=6, pady=8)
+        for c in ativos:
             var = ctk.StringVar(value="off")
             chk = ctk.CTkCheckBox(self.lista_clientes, variable=var, onvalue="on", offvalue="off",
                                   text=f"{c['nome']}  ·  {store.formatar_cnpj(c['cnpj'])}")
@@ -172,20 +186,43 @@ class App(ctk.CTk):
             chk._nome = c["nome"]
             self.check_clientes[c["id"]] = chk
 
-        # aba gerenciar
+    def _carregar_gerenciar(self):
+        clientes = store.listar()
         for w in self.lista_gerenciar.winfo_children():
             w.destroy()
-        self.lbl_qtd.configure(text=f"Clientes cadastrados ({len(clientes)})")
+        ativos = sum(1 for c in clientes if c.get("ativo", True))
+        self.lbl_qtd.configure(text=f"Clientes cadastrados ({len(clientes)}) · {ativos} ativo(s)")
         for c in clientes:
             linha = ctk.CTkFrame(self.lista_gerenciar, fg_color="transparent")
             linha.pack(fill="x", pady=2)
-            ctk.CTkLabel(linha, text=f"{c['nome']}", anchor="w", width=280).pack(side="left", padx=(4, 6))
+            sw = ctk.CTkSwitch(linha, text="", width=44,
+                               command=lambda cid=c["id"], s=None: None)
+            sw.pack(side="left", padx=(2, 6))
+            if c.get("ativo", True):
+                sw.select()
+            sw.configure(command=lambda cid=c["id"], w=sw: self._toggle_ativo(cid, w))
+            cor = None if c.get("ativo", True) else "gray"
+            ctk.CTkLabel(linha, text=f"{c['nome']}", anchor="w", width=250, text_color=cor).pack(side="left", padx=(0, 6))
             ctk.CTkLabel(linha, text=store.formatar_cnpj(c["cnpj"]), anchor="w",
                          text_color="gray").pack(side="left")
-            ctk.CTkButton(linha, text="Excluir", width=70, height=26, fg_color="#c92a2a",
+            ctk.CTkButton(linha, text="Excluir", width=64, height=26, fg_color="#c92a2a",
                           hover_color="#a4262c", command=lambda cid=c["id"], n=c["nome"]: self._excluir(cid, n)).pack(side="right", padx=2)
-            ctk.CTkButton(linha, text="Editar", width=70, height=26,
+            ctk.CTkButton(linha, text="Editar", width=64, height=26,
                           command=lambda cc=c: self._editar(cc)).pack(side="right", padx=2)
+
+    def _toggle_ativo(self, cid, switch):
+        store.set_ativo(cid, switch.get() == 1)
+        self._carregar_emitir()               # atualiza a lista de emissão
+        self._atualizar_qtd()
+
+    def _set_todos(self, ativo):
+        store.set_todos_ativos(ativo)
+        self._carregar_clientes()
+
+    def _atualizar_qtd(self):
+        clientes = store.listar()
+        ativos = sum(1 for c in clientes if c.get("ativo", True))
+        self.lbl_qtd.configure(text=f"Clientes cadastrados ({len(clientes)}) · {ativos} ativo(s)")
 
     def _marcar_clientes(self, valor):
         for chk in self.check_clientes.values():

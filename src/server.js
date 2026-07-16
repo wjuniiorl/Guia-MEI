@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { emitirLote, cnpjValido, MESES_PT } from './pgmei.js';
 import {
   listarClientes, adicionarCliente, editarCliente, removerCliente, importarTexto,
+  setAtivo, setTodosAtivos,
 } from './clientes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -45,6 +46,16 @@ app.delete('/api/clientes/:id', (req, res) => {
 
 app.post('/api/clientes/importar', (req, res) => {
   try { res.json(importarTexto((req.body || {}).texto || '')); }
+  catch (e) { res.status(400).json({ erro: e.message }); }
+});
+
+app.put('/api/clientes/:id/ativo', (req, res) => {
+  try { res.json(setAtivo(req.params.id, (req.body || {}).ativo)); }
+  catch (e) { res.status(400).json({ erro: e.message }); }
+});
+
+app.post('/api/clientes/ativos-todos', (req, res) => {
+  try { setTodosAtivos((req.body || {}).ativo); res.json({ ok: true }); }
   catch (e) { res.status(400).json({ erro: e.message }); }
 });
 

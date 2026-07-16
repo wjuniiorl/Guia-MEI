@@ -132,9 +132,14 @@
       </div>
 
       <div class="card">
-        <h2>Clientes cadastrados (<span id="qtdClientes">0</span>)</h2>
+        <h2>Clientes cadastrados (<span id="qtdClientes">0</span>)
+          <span style="float:right; font-weight:400; font-size:.8rem">
+            <a class="link" onclick="setTodosAtivos(true)">ativar todos</a> ·
+            <a class="link" onclick="setTodosAtivos(false)">desativar todos</a>
+          </span>
+        </h2>
         <table class="clientes-lista">
-          <thead><tr><th>Nome</th><th>CNPJ</th><th></th></tr></thead>
+          <thead><tr><th>Ativo</th><th>Nome</th><th>CNPJ</th><th></th></tr></thead>
           <tbody id="tbodyClientes"></tbody>
         </table>
         <div id="semClientes" class="vazio" style="display:none">Nenhum cliente cadastrado ainda.</div>
@@ -184,30 +189,46 @@
       return [...document.querySelectorAll('#meses input:checked')].map(c => Number(c.value));
     }
 
+    const fmtCnpj = (c) => c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+    const ativo = (c) => c.ativo !== false;
+
     // ---- Carrega clientes ----
     async function carregarClientes() {
       CLIENTES = await fetch('/api/clientes').then(r => r.json());
-      // dropdown
+      const ativos = CLIENTES.filter(ativo);
+      // dropdown (só ATIVOS)
       const sel = $('cliente');
-      sel.innerHTML = CLIENTES.length ? '' : '<option value="">(nenhum cliente cadastrado)</option>';
-      for (const c of CLIENTES) {
+      sel.innerHTML = ativos.length ? '' : '<option value="">(nenhum cliente ativo)</option>';
+      for (const c of ativos) {
         const o = document.createElement('option'); o.value = c.cnpj;
-        o.textContent = `${c.nome} — ${c.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')}`;
+        o.textContent = `${c.nome} — ${fmtCnpj(c.cnpj)}`;
         sel.appendChild(o);
       }
-      // tabela
+      // tabela (todos, com liga/desliga)
       const tb = $('tbodyClientes'); tb.innerHTML = '';
-      $('qtdClientes').textContent = CLIENTES.length;
+      $('qtdClientes').textContent = `${CLIENTES.length} · ${ativos.length} ativo(s)`;
       $('semClientes').style.display = CLIENTES.length ? 'none' : '';
       for (const c of CLIENTES) {
         const tr = document.createElement('tr');
-        const cnpjFmt = c.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
-        tr.innerHTML = `<td>${escapeHtml(c.nome)}</td><td>${cnpjFmt}</td>
+        if (!ativo(c)) tr.style.opacity = '.5';
+        tr.innerHTML = `<td><input type="checkbox" class="tg" ${ativo(c) ? 'checked' : ''} title="Ativo"></td>
+          <td>${escapeHtml(c.nome)}</td><td>${fmtCnpj(c.cnpj)}</td>
           <td><button class="mini edit">Editar</button> <button class="mini del">Excluir</button></td>`;
+        tr.querySelector('.tg').onchange = (e) => toggleAtivo(c, e.target.checked);
         tr.querySelector('.edit').onclick = () => editar(c);
         tr.querySelector('.del').onclick = () => excluir(c);
         tb.appendChild(tr);
       }
+    }
+    async function toggleAtivo(c, val) {
+      await fetch(`/api/clientes/${c.id}/ativo`, { method:'PUT', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ ativo: val }) });
+      await carregarClientes();
+    }
+    async function setTodosAtivos(val) {
+      await fetch('/api/clientes/ativos-todos', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ ativo: val }) });
+      await carregarClientes();
     }
     function escapeHtml(s){ return String(s).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
 

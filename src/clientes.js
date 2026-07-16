@@ -10,6 +10,12 @@ import { limparCnpj, cnpjValido, formatarCnpj } from './pgmei.js';
 const ARQUIVO = path.resolve(process.cwd(), 'dados', 'clientes.json');
 const SEED = path.resolve(process.cwd(), 'clientes-iniciais.json');
 
+// CNPJs que começam ATIVOS na 1ª vez (mesmo conjunto do lado Python).
+const ATIVOS_INICIAIS = new Set([
+  '29249163000194', '24155623000100', '03351763000175', '20767080000112',
+  '49587812000174', '49398137000135', '55590268000112',
+]);
+
 function garantirDir() {
   fs.mkdirSync(path.dirname(ARQUIVO), { recursive: true });
 }
@@ -28,21 +34,55 @@ function semearSeNecessario() {
   for (const s of seed) {
     const c = limparCnpj(s.cnpj);
     if (cnpjValido(c) && !lista.some((x) => x.cnpj === c)) {
-      lista.push({ id: crypto.randomUUID(), nome: String(s.nome || '').trim(), cnpj: c });
+      lista.push({ id: crypto.randomUUID(), nome: String(s.nome || '').trim(), cnpj: c, ativo: ATIVOS_INICIAIS.has(c) });
     }
   }
   if (lista.length) salvar(lista);
 }
 
+/** Dados antigos sem o campo "ativo" recebem a configuração inicial. */
+function migrarAtivos(lista) {
+  if (lista.some((c) => !('ativo' in c))) {
+    for (const c of lista) c.ativo = ATIVOS_INICIAIS.has(limparCnpj(c.cnpj));
+    return true;
+  }
+  return false;
+}
+
 /** Lê a lista de clientes (ordenada por nome). */
 export function listarClientes() {
   semearSeNecessario();
+  let lista;
   try {
-    const lista = JSON.parse(fs.readFileSync(ARQUIVO, 'utf8'));
-    return Array.isArray(lista) ? lista : [];
+    lista = JSON.parse(fs.readFileSync(ARQUIVO, 'utf8'));
+    if (!Array.isArray(lista)) return [];
   } catch {
     return [];
   }
+  if (migrarAtivos(lista)) salvar(lista);
+  return lista;
+}
+
+/** Só os clientes ativos. */
+export function listarAtivos() {
+  return listarClientes().filter((c) => c.ativo !== false);
+}
+
+/** Liga/desliga um cliente. */
+export function setAtivo(id, ativo) {
+  const lista = listarClientes();
+  const c = lista.find((x) => x.id === id);
+  if (!c) throw new Error('Cliente não encontrado.');
+  c.ativo = Boolean(ativo);
+  salvar(lista);
+  return c;
+}
+
+/** Liga/desliga todos. */
+export function setTodosAtivos(ativo) {
+  const lista = listarClientes();
+  for (const c of lista) c.ativo = Boolean(ativo);
+  salvar(lista);
 }
 
 function salvar(lista) {
@@ -67,7 +107,7 @@ export function adicionarCliente({ nome, cnpj }) {
   if (lista.some((x) => limparCnpj(x.cnpj) === cnpjLimpo)) {
     throw new Error('Já existe um cliente com esse CNPJ.');
   }
-  const cliente = { id: crypto.randomUUID(), nome: nomeLimpo, cnpj: cnpjLimpo };
+  const cliente = { id: crypto.randomUUID(), nome: nomeLimpo, cnpj: cnpjLimpo, ativo: true };
   lista.push(cliente);
   salvar(lista);
   return cliente;
@@ -122,7 +162,7 @@ export function importarTexto(texto) {
     if (!nome) { ignorados.push({ linha, motivo: 'Nome não encontrado' }); continue; }
     if (existentes.has(cnpj)) { ignorados.push({ linha, motivo: 'CNPJ já cadastrado' }); continue; }
 
-    const cliente = { id: crypto.randomUUID(), nome, cnpj };
+    const cliente = { id: crypto.randomUUID(), nome, cnpj, ativo: true };
     lista.push(cliente);
     existentes.add(cnpj);
     adicionados.push(cliente);
