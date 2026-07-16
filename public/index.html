@@ -6,214 +6,335 @@
   <title>Guia-MEI · Emissão do DAS</title>
   <style>
     :root {
-      --azul: #1351b4;
-      --azul-escuro: #0c326f;
-      --verde: #168821;
-      --cinza: #f2f2f2;
-      --borda: #d0d0d0;
-      --texto: #1c1c1c;
+      --azul:#1351b4; --azul-esc:#0c326f; --verde:#168821; --verde-esc:#0f6b1a;
+      --cinza:#f4f6fa; --borda:#d7dce5; --texto:#1c2733; --vermelho:#c92a2a;
     }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-      background: linear-gradient(160deg, #eef3fb 0%, #f7f9fc 100%);
-      color: var(--texto);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-    }
-    .card {
-      background: #fff;
-      width: 100%;
-      max-width: 480px;
-      border-radius: 14px;
-      box-shadow: 0 10px 40px rgba(19, 81, 180, 0.12);
-      overflow: hidden;
-    }
-    header {
-      background: var(--azul);
-      color: #fff;
-      padding: 22px 28px;
-    }
-    header h1 { margin: 0; font-size: 1.35rem; }
-    header p { margin: 6px 0 0; font-size: .85rem; opacity: .9; }
-    form { padding: 24px 28px 28px; }
-    label { display: block; font-weight: 600; font-size: .85rem; margin: 14px 0 6px; }
-    input, select {
-      width: 100%;
-      padding: 11px 12px;
-      font-size: 1rem;
-      border: 1px solid var(--borda);
-      border-radius: 8px;
-      background: #fff;
-      transition: border-color .15s;
-    }
-    input:focus, select:focus { outline: none; border-color: var(--azul); }
-    .linha { display: flex; gap: 12px; }
-    .linha > div { flex: 1; }
-    button {
-      margin-top: 22px;
-      width: 100%;
-      padding: 13px;
-      font-size: 1rem;
-      font-weight: 700;
-      color: #fff;
-      background: var(--verde);
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background .15s;
-    }
-    button:hover:not(:disabled) { background: #0f6b1a; }
-    button:disabled { background: #9bb; cursor: not-allowed; }
-    .status {
-      margin-top: 18px;
-      padding: 14px;
-      border-radius: 8px;
-      font-size: .9rem;
-      display: none;
-    }
-    .status.info { display: block; background: #eaf1fb; color: var(--azul-escuro); }
-    .status.erro { display: block; background: #fdeaea; color: #a4262c; }
-    .status.ok   { display: block; background: #e9f6ec; color: var(--verde); }
-    .spinner {
-      display: inline-block; width: 16px; height: 16px;
-      border: 2px solid rgba(19,81,180,.3); border-top-color: var(--azul);
-      border-radius: 50%; animation: girar .8s linear infinite; vertical-align: -3px;
-      margin-right: 8px;
-    }
-    @keyframes girar { to { transform: rotate(360deg); } }
-    footer { text-align: center; font-size: .75rem; color: #888; padding: 0 28px 20px; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+      background:var(--cinza); color:var(--texto); }
+    header.top { background:var(--azul); color:#fff; padding:16px 22px; }
+    header.top h1 { margin:0; font-size:1.2rem; }
+    header.top p { margin:3px 0 0; font-size:.8rem; opacity:.9; }
+    .abas { display:flex; gap:4px; background:var(--azul-esc); padding:0 12px; }
+    .abas button { background:transparent; border:none; color:#cdd8ee; padding:12px 18px;
+      font-size:.95rem; cursor:pointer; border-bottom:3px solid transparent; }
+    .abas button.ativa { color:#fff; border-bottom-color:#fff; font-weight:700; }
+    main { max-width:820px; margin:20px auto; padding:0 16px 60px; }
+    .card { background:#fff; border:1px solid var(--borda); border-radius:12px; padding:20px 22px; margin-bottom:18px; }
+    .card h2 { margin:0 0 14px; font-size:1rem; color:var(--azul-esc); }
+    label { display:block; font-weight:600; font-size:.82rem; margin:12px 0 5px; }
+    input,select,textarea { width:100%; padding:10px 11px; font-size:.95rem; border:1px solid var(--borda);
+      border-radius:8px; background:#fff; font-family:inherit; }
+    input:focus,select:focus,textarea:focus { outline:none; border-color:var(--azul); }
+    .linha { display:flex; gap:12px; flex-wrap:wrap; }
+    .linha > div { flex:1; min-width:140px; }
+    button.acao { margin-top:16px; padding:12px 18px; font-size:.95rem; font-weight:700; color:#fff;
+      background:var(--verde); border:none; border-radius:8px; cursor:pointer; }
+    button.acao:hover:not(:disabled) { background:var(--verde-esc); }
+    button.acao:disabled { background:#9bb; cursor:not-allowed; }
+    button.sec { background:var(--azul); }
+    button.sec:hover:not(:disabled){ background:var(--azul-esc); }
+    .meses { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:6px; }
+    .mes { display:flex; align-items:center; gap:6px; background:var(--cinza); border:1px solid var(--borda);
+      border-radius:8px; padding:8px 10px; font-size:.85rem; cursor:pointer; }
+    .mes input { width:auto; }
+    .chk-inline { display:flex; align-items:center; gap:8px; margin-top:14px; font-size:.88rem; font-weight:600; }
+    .chk-inline input { width:auto; }
+    .status { margin-top:16px; padding:12px 14px; border-radius:8px; font-size:.88rem; display:none; white-space:pre-wrap; }
+    .status.show { display:block; }
+    .status.info { background:#eaf1fb; color:var(--azul-esc); }
+    .status.erro { background:#fdeaea; color:var(--vermelho); }
+    .status.ok { background:#e9f6ec; color:var(--verde); }
+    .spin { display:inline-block; width:14px; height:14px; border:2px solid rgba(19,81,180,.3);
+      border-top-color:var(--azul); border-radius:50%; animation:g .8s linear infinite; vertical-align:-2px; margin-right:6px; }
+    @keyframes g { to { transform:rotate(360deg); } }
+    .logbox { margin-top:10px; max-height:150px; overflow:auto; background:#0d1b2a; color:#a9d4ff;
+      font-family:ui-monospace,Consolas,monospace; font-size:.75rem; border-radius:8px; padding:10px; display:none; }
+    .logbox.show { display:block; }
+    table { width:100%; border-collapse:collapse; margin-top:8px; font-size:.85rem; }
+    th,td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--borda); }
+    th { color:#5a6b7b; font-size:.75rem; text-transform:uppercase; }
+    .badge { font-size:.72rem; padding:2px 8px; border-radius:20px; font-weight:700; }
+    .badge.ok { background:#e9f6ec; color:var(--verde); }
+    .badge.erro { background:#fdeaea; color:var(--vermelho); }
+    .mini { padding:5px 10px; font-size:.78rem; border:none; border-radius:6px; cursor:pointer; color:#fff; }
+    .mini.edit { background:var(--azul); }
+    .mini.del { background:var(--vermelho); }
+    .mini.dl { background:var(--verde); text-decoration:none; display:inline-block; }
+    .clientes-lista td:last-child { text-align:right; white-space:nowrap; }
+    .vazio { color:#7a8a9a; font-size:.85rem; padding:10px 0; }
+    a.link { color:var(--azul); cursor:pointer; font-size:.82rem; }
+    .hint { font-size:.78rem; color:#6a7889; margin-top:4px; }
   </style>
 </head>
 <body>
-  <div class="card">
-    <header>
-      <h1>Guia-MEI · Emissão do DAS</h1>
-      <p>Gere e baixe a Guia de Pagamento (DAS) do MEI automaticamente.</p>
-    </header>
-    <form id="form">
-      <label for="cnpj">CNPJ do MEI</label>
-      <input id="cnpj" name="cnpj" type="text" inputmode="numeric" placeholder="00.000.000/0000-00"
-             autocomplete="off" required />
-
-      <div class="linha">
-        <div>
-          <label for="ano">Ano-calendário</label>
-          <select id="ano" name="ano" required></select>
-        </div>
-        <div>
-          <label for="mes">Mês de apuração</label>
-          <select id="mes" name="mes" required></select>
-        </div>
-      </div>
-
-      <button id="btn" type="submit">Emitir e baixar DAS</button>
-      <div id="status" class="status"></div>
-    </form>
-    <footer>Uso pessoal · dados enviados apenas ao portal oficial da Receita Federal.</footer>
+  <header class="top">
+    <h1>Guia-MEI · Emissão do DAS</h1>
+    <p>Gere as guias do MEI por cliente, escolhendo o ano e os meses.</p>
+  </header>
+  <div class="abas">
+    <button id="ab-emitir" class="ativa" onclick="mostrarAba('emitir')">Emitir DAS</button>
+    <button id="ab-clientes" onclick="mostrarAba('clientes')">Clientes</button>
   </div>
 
+  <main>
+    <!-- ============ ABA EMITIR ============ -->
+    <section id="aba-emitir">
+      <div class="card">
+        <h2>Emitir guias</h2>
+        <label for="cliente">Cliente</label>
+        <select id="cliente"></select>
+        <div class="hint">Não achou? Cadastre na aba <a class="link" onclick="mostrarAba('clientes')">Clientes</a>.</div>
+
+        <div class="linha" style="margin-top:6px">
+          <div>
+            <label for="ano">Ano-calendário</label>
+            <select id="ano"></select>
+          </div>
+        </div>
+
+        <label style="margin-top:14px">Meses de apuração
+          <a class="link" style="font-weight:400; margin-left:8px" onclick="marcarMeses(true)">todos</a> ·
+          <a class="link" style="font-weight:400" onclick="marcarMeses(false)">limpar</a>
+        </label>
+        <div class="meses" id="meses"></div>
+
+        <label class="chk-inline"><input type="checkbox" id="invisivel" /> Janela invisível (não mostra o Chrome)</label>
+
+        <button id="btnEmitir" class="acao" onclick="emitir()">Emitir DAS selecionado(s)</button>
+        <div id="status" class="status"></div>
+        <div id="logbox" class="logbox"></div>
+        <div id="resultados"></div>
+      </div>
+    </section>
+
+    <!-- ============ ABA CLIENTES ============ -->
+    <section id="aba-clientes" style="display:none">
+      <div class="card">
+        <h2 id="formTitulo">Adicionar cliente</h2>
+        <input type="hidden" id="clienteId" />
+        <label for="nome">Nome</label>
+        <input id="nome" type="text" placeholder="Ex.: MARIA DO ROSARIO" autocomplete="off" />
+        <label for="cnpjInput">CNPJ</label>
+        <input id="cnpjInput" type="text" placeholder="00.000.000/0000-00" autocomplete="off" inputmode="numeric" />
+        <button id="btnSalvar" class="acao" onclick="salvarCliente()">Adicionar</button>
+        <button id="btnCancelar" class="acao sec" style="display:none" onclick="cancelarEdicao()">Cancelar</button>
+        <div id="statusCli" class="status"></div>
+      </div>
+
+      <div class="card">
+        <h2>Importar vários (colar lista)</h2>
+        <div class="hint">Cole uma linha por cliente, com o nome e o CNPJ (em qualquer ordem). Ex.:<br>
+          <code>MARIA DO ROSARIO&nbsp;&nbsp;&nbsp;03.351.763/0001-75</code></div>
+        <textarea id="importTexto" rows="5" placeholder="NOME    CNPJ&#10;NOME    CNPJ"></textarea>
+        <button class="acao sec" onclick="importar()">Importar lista</button>
+        <div id="statusImp" class="status"></div>
+      </div>
+
+      <div class="card">
+        <h2>Clientes cadastrados (<span id="qtdClientes">0</span>)</h2>
+        <table class="clientes-lista">
+          <thead><tr><th>Nome</th><th>CNPJ</th><th></th></tr></thead>
+          <tbody id="tbodyClientes"></tbody>
+        </table>
+        <div id="semClientes" class="vazio" style="display:none">Nenhum cliente cadastrado ainda.</div>
+      </div>
+    </section>
+  </main>
+
   <script>
-    const form = document.getElementById('form');
-    const btn = document.getElementById('btn');
-    const status = document.getElementById('status');
-    const selAno = document.getElementById('ano');
-    const selMes = document.getElementById('mes');
-    const inputCnpj = document.getElementById('cnpj');
+    let CLIENTES = [];
+    const $ = (id) => document.getElementById(id);
 
-    // Preenche anos (ano atual e 5 anteriores)
-    const anoAtual = new Date().getFullYear();
-    for (let a = anoAtual; a >= anoAtual - 5; a--) {
-      const o = document.createElement('option');
-      o.value = a; o.textContent = a;
-      selAno.appendChild(o);
+    function mostrarAba(nome) {
+      $('aba-emitir').style.display = nome === 'emitir' ? '' : 'none';
+      $('aba-clientes').style.display = nome === 'clientes' ? '' : 'none';
+      $('ab-emitir').classList.toggle('ativa', nome === 'emitir');
+      $('ab-clientes').classList.toggle('ativa', nome === 'clientes');
     }
 
-    // Preenche meses
-    fetch('/api/meses').then(r => r.json()).then(meses => {
-      const mesAtual = new Date().getMonth() + 1;
-      for (const m of meses) {
-        const o = document.createElement('option');
-        o.value = m.valor; o.textContent = m.nome;
-        if (m.valor === mesAtual) o.selected = true;
-        selMes.appendChild(o);
+    function setStatus(el, tipo, html) { el.className = 'status show ' + tipo; el.innerHTML = html; }
+    function limpaStatus(el) { el.className = 'status'; el.innerHTML = ''; }
+
+    // ---- Máscara de CNPJ ----
+    function mascaraCnpj(v) {
+      v = v.replace(/\D/g, '').slice(0, 14);
+      return v.replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+              .replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2');
+    }
+    $('cnpjInput').addEventListener('input', (e) => { e.target.value = mascaraCnpj(e.target.value); });
+
+    // ---- Preenche anos e meses ----
+    (function initAnoMes() {
+      const anoAtual = new Date().getFullYear();
+      for (let a = anoAtual; a >= anoAtual - 5; a--) {
+        const o = document.createElement('option'); o.value = a; o.textContent = a; $('ano').appendChild(o);
       }
-    });
-
-    // Máscara simples de CNPJ
-    inputCnpj.addEventListener('input', () => {
-      let v = inputCnpj.value.replace(/\D/g, '').slice(0, 14);
-      v = v.replace(/^(\d{2})(\d)/, '$1.$2')
-           .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
-           .replace(/\.(\d{3})(\d)/, '.$1/$2')
-           .replace(/(\d{4})(\d)/, '$1-$2');
-      inputCnpj.value = v;
-    });
-
-    function setStatus(tipo, html) {
-      status.className = 'status ' + tipo;
-      status.innerHTML = html;
+      fetch('/api/meses').then(r => r.json()).then(meses => {
+        const g = $('meses');
+        for (const m of meses) {
+          const lbl = document.createElement('label'); lbl.className = 'mes';
+          lbl.innerHTML = `<input type="checkbox" value="${m.valor}"> ${m.nome}`;
+          g.appendChild(lbl);
+        }
+      });
+    })();
+    function marcarMeses(v) { document.querySelectorAll('#meses input').forEach(c => c.checked = v); }
+    function mesesSelecionados() {
+      return [...document.querySelectorAll('#meses input:checked')].map(c => Number(c.value));
     }
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const cnpj = inputCnpj.value.replace(/\D/g, '');
-      const ano = selAno.value;
-      const mes = selMes.value;
-
-      if (cnpj.length !== 14) {
-        setStatus('erro', 'Informe um CNPJ com 14 dígitos.');
-        return;
+    // ---- Carrega clientes ----
+    async function carregarClientes() {
+      CLIENTES = await fetch('/api/clientes').then(r => r.json());
+      // dropdown
+      const sel = $('cliente');
+      sel.innerHTML = CLIENTES.length ? '' : '<option value="">(nenhum cliente cadastrado)</option>';
+      for (const c of CLIENTES) {
+        const o = document.createElement('option'); o.value = c.cnpj;
+        o.textContent = `${c.nome} — ${c.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')}`;
+        sel.appendChild(o);
       }
+      // tabela
+      const tb = $('tbodyClientes'); tb.innerHTML = '';
+      $('qtdClientes').textContent = CLIENTES.length;
+      $('semClientes').style.display = CLIENTES.length ? 'none' : '';
+      for (const c of CLIENTES) {
+        const tr = document.createElement('tr');
+        const cnpjFmt = c.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+        tr.innerHTML = `<td>${escapeHtml(c.nome)}</td><td>${cnpjFmt}</td>
+          <td><button class="mini edit">Editar</button> <button class="mini del">Excluir</button></td>`;
+        tr.querySelector('.edit').onclick = () => editar(c);
+        tr.querySelector('.del').onclick = () => excluir(c);
+        tb.appendChild(tr);
+      }
+    }
+    function escapeHtml(s){ return String(s).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
 
-      btn.disabled = true;
-      setStatus('info', '<span class="spinner"></span> Emitindo a guia no portal da Receita...<br>' +
-        '<small>Se o site pedir verificação, uma janela do navegador vai abrir para você resolver o captcha — depois a emissão continua sozinha.</small>');
+    // ---- CRUD clientes ----
+    async function salvarCliente() {
+      const id = $('clienteId').value;
+      const nome = $('nome').value.trim();
+      const cnpj = $('cnpjInput').value.replace(/\D/g, '');
+      if (!nome || cnpj.length !== 14) { setStatus($('statusCli'), 'erro', 'Informe nome e CNPJ completo.'); return; }
+      const url = id ? `/api/clientes/${id}` : '/api/clientes';
+      const resp = await fetch(url, { method: id ? 'PUT' : 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ nome, cnpj }) });
+      const data = await resp.json();
+      if (!resp.ok) { setStatus($('statusCli'), 'erro', data.erro || 'Erro ao salvar.'); return; }
+      setStatus($('statusCli'), 'ok', id ? 'Cliente atualizado!' : 'Cliente adicionado!');
+      cancelarEdicao(); await carregarClientes();
+    }
+    function editar(c) {
+      $('clienteId').value = c.id; $('nome').value = c.nome;
+      $('cnpjInput').value = mascaraCnpj(c.cnpj);
+      $('formTitulo').textContent = 'Editar cliente'; $('btnSalvar').textContent = 'Salvar alterações';
+      $('btnCancelar').style.display = ''; window.scrollTo({top:0, behavior:'smooth'});
+    }
+    function cancelarEdicao() {
+      $('clienteId').value = ''; $('nome').value = ''; $('cnpjInput').value = '';
+      $('formTitulo').textContent = 'Adicionar cliente'; $('btnSalvar').textContent = 'Adicionar';
+      $('btnCancelar').style.display = 'none';
+    }
+    async function excluir(c) {
+      if (!confirm(`Excluir o cliente "${c.nome}"?`)) return;
+      const resp = await fetch(`/api/clientes/${c.id}`, { method: 'DELETE' });
+      if (resp.ok) await carregarClientes();
+    }
+    async function importar() {
+      const texto = $('importTexto').value;
+      if (!texto.trim()) return;
+      const resp = await fetch('/api/clientes/importar', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ texto }) });
+      const data = await resp.json();
+      if (!resp.ok) { setStatus($('statusImp'), 'erro', data.erro || 'Erro.'); return; }
+      let msg = `✅ ${data.adicionados} cliente(s) importado(s).`;
+      if (data.ignorados && data.ignorados.length) {
+        msg += `\n${data.ignorados.length} linha(s) ignorada(s):\n` +
+          data.ignorados.slice(0,8).map(i => `• ${i.linha} → ${i.motivo}`).join('\n');
+      }
+      setStatus($('statusImp'), data.adicionados ? 'ok' : 'info', msg);
+      $('importTexto').value = ''; await carregarClientes();
+    }
+
+    // ---- Emissão (SSE) ----
+    async function emitir() {
+      const cnpj = $('cliente').value;
+      const ano = $('ano').value;
+      const meses = mesesSelecionados();
+      if (!cnpj) { setStatus($('status'), 'erro', 'Selecione um cliente.'); return; }
+      if (!meses.length) { setStatus($('status'), 'erro', 'Selecione ao menos um mês.'); return; }
+
+      $('btnEmitir').disabled = true;
+      $('resultados').innerHTML = '';
+      $('logbox').className = 'logbox show'; $('logbox').textContent = '';
+      setStatus($('status'), 'info', `<span class="spin"></span> Emitindo ${meses.length} guia(s)... o Chrome vai abrir e trabalhar sozinho.`);
 
       try {
-        const resp = await fetch('/api/emitir', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cnpj, ano, mes }),
-        });
-
-        if (!resp.ok) {
-          const erro = await resp.json().catch(() => ({ erro: 'Erro desconhecido.' }));
-          setStatus('erro', '❌ ' + (erro.erro || 'Falha na emissão.'));
-          return;
+        const resp = await fetch('/api/emitir', { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ cnpj, ano, meses, invisivel: $('invisivel').checked }) });
+        if (!resp.ok && resp.headers.get('content-type')?.includes('json')) {
+          const e = await resp.json(); setStatus($('status'), 'erro', e.erro || 'Erro.'); $('btnEmitir').disabled=false; return;
         }
-
-        const nome = decodeURIComponent(resp.headers.get('X-Contribuinte') || '');
-        const periodo = decodeURIComponent(resp.headers.get('X-Periodo') || '');
-        const valor = decodeURIComponent(resp.headers.get('X-Valor') || '');
-
-        const blob = await resp.blob();
-        const cd = resp.headers.get('Content-Disposition') || '';
-        const m = cd.match(/filename="([^"]+)"/);
-        const fileName = m ? decodeURIComponent(m[1]) : 'DAS.pdf';
-
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = fileName;
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(url);
-
-        setStatus('ok',
-          `✅ DAS emitido com sucesso!<br>` +
-          (nome ? `<strong>${nome}</strong><br>` : '') +
-          (periodo ? `Período: ${periodo}<br>` : '') +
-          (valor ? `Valor: ${valor}<br>` : '') +
-          `Arquivo: ${fileName}`);
-      } catch (err) {
-        setStatus('erro', '❌ ' + err.message);
+        await lerSSE(resp, onEvento);
+      } catch (e) {
+        setStatus($('status'), 'erro', 'Falha: ' + e.message);
       } finally {
-        btn.disabled = false;
+        $('btnEmitir').disabled = false;
       }
-    });
+    }
+
+    function onEvento(evento, dados) {
+      if (evento === 'log') {
+        const lb = $('logbox'); lb.textContent += dados.msg + '\n'; lb.scrollTop = lb.scrollHeight;
+      } else if (evento === 'erro') {
+        setStatus($('status'), 'erro', '❌ ' + dados.erro);
+      } else if (evento === 'done') {
+        renderResultados(dados);
+      }
+    }
+
+    function renderResultados(dados) {
+      const ok = dados.resultados.filter(r => r.ok).length;
+      const total = dados.resultados.length;
+      setStatus($('status'), ok === total ? 'ok' : (ok ? 'info' : 'erro'),
+        `${ok === total ? '✅' : '⚠️'} ${ok}/${total} guia(s) emitida(s)` + (dados.nome ? ` — ${dados.nome}` : ''));
+      let html = '<table><thead><tr><th>Período</th><th>Situação</th><th>Valor</th><th></th></tr></thead><tbody>';
+      for (const r of dados.resultados) {
+        html += `<tr><td>${r.periodo}</td>`;
+        html += r.ok
+          ? `<td><span class="badge ok">OK</span></td><td>${r.valor || '-'}</td>
+             <td><a class="mini dl" href="/api/download?file=${encodeURIComponent(r.fileName)}">Baixar PDF</a></td>`
+          : `<td><span class="badge erro">Falhou</span></td><td colspan="2">${escapeHtml(r.erro || '')}</td>`;
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+      $('resultados').innerHTML = html;
+    }
+
+    // Lê um stream SSE de uma resposta fetch.
+    async function lerSSE(resp, cb) {
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const partes = buf.split('\n\n');
+        buf = partes.pop();
+        for (const bloco of partes) {
+          let ev = 'message', data = '';
+          for (const linha of bloco.split('\n')) {
+            if (linha.startsWith('event:')) ev = linha.slice(6).trim();
+            else if (linha.startsWith('data:')) data += linha.slice(5).trim();
+          }
+          if (data) { try { cb(ev, JSON.parse(data)); } catch {} }
+        }
+      }
+    }
+
+    carregarClientes();
   </script>
 </body>
 </html>

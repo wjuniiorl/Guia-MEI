@@ -74,7 +74,7 @@ Opções:
 |----------------|------------------------------------------------------|
 | `--cnpj`, `-c` | CNPJ (com ou sem formatação) **[obrigatório]**       |
 | `--ano`, `-a`  | Ano-calendário, ex.: `2026` **[obrigatório]**        |
-| `--mes`, `-m`  | Mês de apuração, `1`..`12` **[obrigatório]**         |
+| `--mes`, `-m`  | Mês `1`..`12` — ou vários: `6,7,8` **[obrigatório]** |
 | `--out`, `-o`   | Diretório de saída (padrão: `./downloads`)          |
 | `--modo`        | `chrome` (padrão), `headless`, `headful`            |
 | `--auto`        | (experimental) preenche o CNPJ e clica Continuar sozinho |
@@ -94,26 +94,38 @@ node src/cli.js -c 03351763000181 -a 2026 -m 6
 O PDF é salvo como, por exemplo:
 `downloads/03.351.763 MARIA DO ROSARIO RUIZ SOUZA - Junho-2026.pdf`
 
-## Uso — Interface web
+## Uso — Interface web (recomendado)
 
 ```bash
 npm start
 ```
 
-Abra **http://localhost:3000**, informe o CNPJ, escolha o ano e o mês e clique
-em **"Emitir e baixar DAS"**. Se o captcha desafiar, a janela do navegador abre
-para você resolver; ao final o PDF é baixado automaticamente.
+Abra **http://localhost:3000**. A interface tem duas abas:
+
+**Emitir DAS**
+- Escolha o **cliente** (lista salva), o **ano** e **um ou vários meses**.
+- Marque *"Janela invisível"* se não quiser ver o Chrome (opcional).
+- Clique em **"Emitir DAS"** — o Chrome abre, preenche o CNPJ, passa o captcha e
+  gera cada guia. O progresso aparece ao vivo e cada PDF fica com um botão
+  **Baixar PDF**.
+
+**Clientes**
+- **Adicionar / editar / excluir** clientes (nome + CNPJ).
+- **Importar vários** de uma vez: cole a lista (uma linha por cliente, com nome
+  e CNPJ) e clique em *Importar*.
+
+Os clientes ficam salvos **apenas na sua máquina**, em `dados/clientes.json`
+(fora do Git — dados pessoais não vão para o repositório).
 
 Variáveis de ambiente:
 
 | Variável      | Descrição                                              |
 |---------------|--------------------------------------------------------|
 | `PORT`        | Porta do servidor (padrão `3000`)                      |
-| `MODO`        | `chrome` (padrão), `headless`, `headful`               |
 | `CHROME_PATH` | Caminho do Chrome/Edge, se não for detectado           |
 
 > A interface web executa o navegador **na mesma máquina do servidor**. Rode
-> localmente para que a janela do captcha apareça na sua tela.
+> localmente para que tudo funcione.
 
 ---
 
@@ -141,7 +153,7 @@ downloads/     PDFs gerados (ignorado no git)
 
 ## Observações
 
-- **Um mês por execução**, conforme o passo a passo do portal.
+- Emite **um ou vários meses** numa única identificação (útil para gerar o ano todo de uma vez).
 - Use apenas para CNPJs que você tem autorização para administrar.
 - O portal pode mudar o layout/versão a qualquer momento; se algum seletor
   quebrar, ajuste em `src/pgmei.js`.

@@ -146,15 +146,31 @@ function esperar(ms) { return new Promise((r) => setTimeout(r, ms)); }
  * @returns {Promise<{pdfPath, fileName, nome, valor, periodo}>}
  */
 export async function emitirDAS(opts = {}) {
+  const { nome, resultados } = await emitirLote({ ...opts, meses: [opts.mes] });
+  const r = resultados[0];
+  if (!r || !r.ok) throw new Error(r?.erro || 'Falha na emissão.');
+  return { pdfPath: r.pdfPath, fileName: r.fileName, nome, valor: r.valor, periodo: r.periodo };
+}
+
+/**
+ * Emite o DAS de VÁRIOS meses numa única identificação.
+ *
+ * @param {object} opts  Igual ao emitirDAS, mas com `meses` (array 1..12) no
+ *        lugar de `mes`. Também aceita `onProgresso({mes, ok, ...})`.
+ * @returns {Promise<{nome:string|null, resultados: Array<{
+ *   mes:number, periodo:string, ok:boolean, erro?:string,
+ *   pdfPath?:string, fileName?:string, valor?:string|null }>}>}
+ */
+export async function emitirLote(opts = {}) {
   const {
-    cnpj, ano, mes, modo = 'chrome',
+    cnpj, ano, meses, mes, modo = 'chrome',
     outputDir, perfilDir,
     timeoutIdentificacao = 600000,
-    onLog, confirmar,
-    novoPerfil = false,  // (modo chrome) recomeça o perfil dedicado do zero
-    auto = false,        // (modo chrome) preenche CNPJ e clica Continuar sozinho (experimental)
-    minimizar = false,   // (modo chrome) abre a janela minimizada ("invisível", mas passa no captcha)
-    chromeHeadless = false, // (modo chrome) headless de verdade — EXPERIMENTAL, costuma ser bloqueado
+    onLog, confirmar, onProgresso,
+    novoPerfil = false,
+    auto = false,
+    minimizar = false,
+    chromeHeadless = false,
   } = opts;
 
   const log = (msg) => {
@@ -164,21 +180,24 @@ export async function emitirDAS(opts = {}) {
 
   const cnpjLimpo = limparCnpj(cnpj);
   if (cnpjLimpo.length !== 14) throw new Error('CNPJ deve conter 14 dígitos (com dígito verificador).');
-  const anoNum = Number(ano), mesNum = Number(mes);
-  if (!Number.isInteger(mesNum) || mesNum < 1 || mesNum > 12) throw new Error('Mês inválido. Informe um número de 1 a 12.');
+  const anoNum = Number(ano);
   if (!Number.isInteger(anoNum) || anoNum < 2009 || anoNum > 2100) throw new Error('Ano inválido.');
 
-  const periodoPA = `${anoNum}${String(mesNum).padStart(2, '0')}`;
+  const listaMeses = [...new Set((meses && meses.length ? meses : [mes]).map(Number))]
+    .filter((m) => Number.isInteger(m) && m >= 1 && m <= 12)
+    .sort((a, b) => a - b);
+  if (!listaMeses.length) throw new Error('Informe ao menos um mês válido (1..12).');
+
   const dir = outputDir || path.resolve(process.cwd(), 'downloads');
   fs.mkdirSync(dir, { recursive: true });
   const perfil = perfilDir || path.resolve(process.cwd(), '.perfil-chromium');
   fs.mkdirSync(perfil, { recursive: true });
 
   const ctx = {
-    cnpjLimpo, anoNum, mesNum, periodoPA, dir, perfil, timeoutIdentificacao, log, confirmar,
+    cnpjLimpo, anoNum, meses: listaMeses, dir, perfil, timeoutIdentificacao, log, confirmar, onProgresso,
     novoPerfil, autoInicio: auto, minimizar, headless: chromeHeadless,
   };
-  log(`Iniciando emissão do DAS — CNPJ ${formatarCnpj(cnpjLimpo)}, ${MESES_PT[mesNum - 1]}/${anoNum} (PA ${periodoPA})`);
+  log(`Iniciando emissão — CNPJ ${formatarCnpj(cnpjLimpo)}, ${anoNum}, meses: ${listaMeses.map((m) => MESES_PT[m - 1]).join(', ')}`);
 
   if (modo === 'chrome') return await emitirViaChromeReal(ctx);
 
@@ -187,10 +206,30 @@ export async function emitirDAS(opts = {}) {
   const s = await abrirSessaoPlaywright(ctx, { headless });
   try {
     await identificarAutomatico(s.page, ctx, { esperarCaptcha: !headless });
-    return await rodarEmissao(s.context, s.page, ctx);
+    return await emitirMeses(s.context, s.page, ctx);
   } finally {
     await s.fechar().catch(() => {});
   }
+}
+
+/** Loop de emissão por mês numa sessão já identificada. Continua se um mês falhar. */
+async function emitirMeses(context, page, ctx) {
+  const resultados = [];
+  let nome = null;
+  for (const mes of ctx.meses) {
+    const periodo = `${MESES_PT[mes - 1]}/${ctx.anoNum}`;
+    try {
+      const r = await rodarEmissao(context, page, ctx, mes);
+      nome = r.nome || nome;
+      resultados.push({ mes, periodo, ok: true, pdfPath: r.pdfPath, fileName: r.fileName, valor: r.valor });
+      if (typeof ctx.onProgresso === 'function') ctx.onProgresso({ mes, periodo, ok: true, ...r });
+    } catch (e) {
+      ctx.log(`Falha no mês ${MESES_PT[mes - 1]}: ${e.message}`);
+      resultados.push({ mes, periodo, ok: false, erro: e.message });
+      if (typeof ctx.onProgresso === 'function') ctx.onProgresso({ mes, periodo, ok: false, erro: e.message });
+    }
+  }
+  return { nome, resultados };
 }
 
 // ---------------------------------------------------------------------------
@@ -300,7 +339,7 @@ async function emitirViaChromeReal(ctx) {
         await esperarIdentificacaoAceita(page, ctx.timeoutIdentificacao, log);
       }
 
-      const resultado = await rodarEmissao(context, page, ctx);
+      const resultado = await emitirMeses(context, page, ctx);
       await fecharNavegador(browser, page);
       return resultado;
     }
@@ -325,7 +364,7 @@ async function emitirViaChromeReal(ctx) {
     const context = browser.contexts()[0] || await browser.newContext();
     page = await encontrarPaginaIdentificada(context, ctx.timeoutIdentificacao, log);
     page.setDefaultTimeout(45000);
-    const resultado = await rodarEmissao(context, page, ctx);
+    const resultado = await emitirMeses(context, page, ctx);
     await fecharNavegador(browser, page);
     return resultado;
   } catch (err) {
@@ -476,8 +515,9 @@ async function identificarAutomatico(page, ctx, { esperarCaptcha }) {
 // FASE 2: emissão (sem captcha) — comum a todos os modos
 // ---------------------------------------------------------------------------
 
-async function rodarEmissao(context, page, ctx) {
-  const { anoNum, mesNum, periodoPA, dir, cnpjLimpo, log } = ctx;
+async function rodarEmissao(context, page, ctx, mesNum) {
+  const { anoNum, dir, cnpjLimpo, log } = ctx;
+  const periodoPA = `${anoNum}${String(mesNum).padStart(2, '0')}`;
 
   // NOTA: NÃO usamos waitForLoadState('networkidle') — páginas do gov.br mantêm
   // conexões abertas e a rede "nunca para", o que travava a automação. Em vez

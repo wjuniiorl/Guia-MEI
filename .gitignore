@@ -1,6 +1,7 @@
 node_modules/
 downloads/
 .perfil-chromium/
+dados/
 *.pdf
 _probe.mjs
 .DS_Store

@@ -11,7 +11,7 @@
 // no navegador durante a identificação — é o que despista o hCaptcha.
 
 import readline from 'node:readline';
-import { emitirDAS, cnpjValido, formatarCnpj } from './pgmei.js';
+import { emitirLote, cnpjValido } from './pgmei.js';
 
 function parseArgs(argv) {
   const args = {};
@@ -39,7 +39,7 @@ Uso:
 Opções:
   --cnpj, -c   CNPJ (com ou sem formatação)          [obrigatório]
   --ano,  -a   Ano-calendário (ex: 2026)             [obrigatório]
-  --mes,  -m   Mês de apuração (1..12)               [obrigatório]
+  --mes,  -m   Mês (1..12) ou vários: 6,7,8          [obrigatório]
   --out,  -o   Diretório de saída (default: ./downloads)
   --modo       chrome | headless | headful (default: chrome)
   --auto       preenche o CNPJ e clica Continuar sozinho
@@ -93,12 +93,14 @@ async function main() {
   }
 
   const modo = ['chrome', 'headless', 'headful'].includes(args.modo) ? args.modo : 'chrome';
+  // Aceita um mês (-m 6) ou vários separados por vírgula (-m 6,7,8).
+  const meses = String(args.mes).split(',').map((s) => Number(s.trim())).filter(Boolean);
 
   try {
-    const resultado = await emitirDAS({
+    const { nome, resultados } = await emitirLote({
       cnpj: args.cnpj,
       ano: args.ano,
-      mes: args.mes,
+      meses,
       modo,
       outputDir: args.out,
       novoPerfil: Boolean(args['novo-perfil']),
@@ -114,12 +116,14 @@ async function main() {
         : undefined,
     });
 
-    console.log('\n✅ DAS emitido com sucesso!');
-    console.log(`   Contribuinte: ${resultado.nome || '(não identificado)'}`);
-    console.log(`   Período:      ${resultado.periodo}`);
-    if (resultado.valor) console.log(`   Valor:        ${resultado.valor}`);
-    console.log(`   Arquivo:      ${resultado.pdfPath}`);
-    process.exit(0);
+    const ok = resultados.filter((r) => r.ok);
+    console.log(`\n${ok.length === resultados.length ? '✅' : '⚠️'} ${ok.length}/${resultados.length} guia(s) emitida(s)`);
+    console.log(`   Contribuinte: ${nome || '(não identificado)'}`);
+    for (const r of resultados) {
+      if (r.ok) console.log(`   ✔ ${r.periodo} — ${r.valor || ''}  →  ${r.pdfPath}`);
+      else console.log(`   ✖ ${r.periodo} — FALHOU: ${r.erro}`);
+    }
+    process.exit(ok.length ? 0 : 1);
   } catch (err) {
     console.error(`\n❌ Falha na emissão: ${err.message}`);
     process.exit(1);
