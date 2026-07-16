@@ -42,6 +42,7 @@ Opções:
   --mes,  -m   Mês de apuração (1..12)               [obrigatório]
   --out,  -o   Diretório de saída (default: ./downloads)
   --modo       chrome | headless | headful (default: chrome)
+  --auto       (experimental) preenche o CNPJ e clica Continuar sozinho
   --novo-perfil  Recomeça o perfil dedicado do zero (use se algo travar)
   --help, -h   Mostra esta ajuda
 
@@ -96,9 +97,11 @@ async function main() {
       modo,
       outputDir: args.out,
       novoPerfil: Boolean(args['novo-perfil']),
+      auto: Boolean(args.auto),
       onLog: (msg) => console.log(`  › ${msg}`),
-      // No modo chrome, aguarda o ENTER após a identificação manual.
-      confirmar: modo === 'chrome'
+      // No modo chrome manual, aguarda o ENTER após a identificação. No modo
+      // --auto a automação preenche/clica sozinha, então não pede ENTER.
+      confirmar: (modo === 'chrome' && !args.auto)
         ? () => esperarEnter('\n  ➤ Depois de estar identificado na janela, tecle ENTER aqui para continuar... ')
         : undefined,
     });

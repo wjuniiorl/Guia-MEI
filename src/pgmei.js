@@ -152,6 +152,7 @@ export async function emitirDAS(opts = {}) {
     timeoutIdentificacao = 600000,
     onLog, confirmar,
     novoPerfil = false,  // (modo chrome) recomeça o perfil dedicado do zero
+    auto = false,        // (modo chrome) preenche CNPJ e clica Continuar sozinho (experimental)
   } = opts;
 
   const log = (msg) => {
@@ -171,7 +172,7 @@ export async function emitirDAS(opts = {}) {
   const perfil = perfilDir || path.resolve(process.cwd(), '.perfil-chromium');
   fs.mkdirSync(perfil, { recursive: true });
 
-  const ctx = { cnpjLimpo, anoNum, mesNum, periodoPA, dir, perfil, timeoutIdentificacao, log, confirmar, novoPerfil };
+  const ctx = { cnpjLimpo, anoNum, mesNum, periodoPA, dir, perfil, timeoutIdentificacao, log, confirmar, novoPerfil, autoInicio: auto };
   log(`Iniciando emissão do DAS — CNPJ ${formatarCnpj(cnpjLimpo)}, ${MESES_PT[mesNum - 1]}/${anoNum} (PA ${periodoPA})`);
 
   if (modo === 'chrome') return await emitirViaChromeReal(ctx);
@@ -241,7 +242,43 @@ async function emitirViaChromeReal(ctx) {
   let browser = null;
   let page = null;
   try {
-    // Instruções para a FASE 1 (manual).
+    if (ctx.autoInicio) {
+      // MODO AUTOMÁTICO (experimental): a automação preenche o CNPJ e clica em
+      // Continuar. Pode ser bloqueado pelo hCaptcha — se for, use o modo normal.
+      const portaReal = await esperarPortaCDP(perfilChrome, porta, 25000);
+      log('Conectando ao navegador (modo automático)...');
+      browser = await conectarCDP(portaReal, log);
+      const context = browser.contexts()[0] || await browser.newContext();
+      page = await encontrarPaginaComCampo(context, '#cnpj', 30000);
+      page.setDefaultTimeout(45000);
+
+      log('Preenchendo o CNPJ e clicando em Continuar...');
+      await page.locator('#cnpj').fill(cnpjLimpo);
+      await page.getByRole('button', { name: /Continuar/i }).click();
+
+      // Detecta bloqueio de captcha logo após o clique.
+      await page.waitForTimeout(3500);
+      const bloqueado = await page.evaluate(() =>
+        /Comportamento de Rob[oô]|Impedido por prote[cç][aã]o Captcha|13896/i.test(document.body.innerText || ''));
+      if (bloqueado) {
+        throw new CaptchaBloqueado(
+          'O modo automático (--auto) foi bloqueado pelo captcha. Rode SEM --auto ' +
+          '(você digita o CNPJ e clica em Continuar manualmente).'
+        );
+      }
+
+      // Se apareceu um desafio de captcha para resolver, espera o usuário.
+      if (!(await page.locator(SELETOR_MENU_EMISSAO).count())) {
+        log('Se aparecer um desafio de captcha, resolva na janela. Aguardando identificação...');
+        await esperarIdentificacaoAceita(page, ctx.timeoutIdentificacao, log);
+      }
+
+      const resultado = await rodarEmissao(context, page, ctx);
+      await fecharNavegador(browser, page);
+      return resultado;
+    }
+
+    // MODO NORMAL: o usuário faz a identificação; a automação só assume na fase 2.
     log('');
     log('┌─ FAÇA A IDENTIFICAÇÃO NA JANELA DO NAVEGADOR ─────────────────────');
     log('│  • Se pedir login/definir padrão, pode dispensar (não é preciso).');
@@ -268,6 +305,19 @@ async function emitirViaChromeReal(ctx) {
     await fecharNavegador(browser, page);
     throw err;
   }
+}
+
+/** Encontra a aba do PGMEI que contém um campo (ex.: #cnpj). Aguarda se preciso. */
+async function encontrarPaginaComCampo(context, seletor, timeout) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    for (const p of context.pages()) {
+      if (!p.url().includes('pgmei.app')) continue;
+      if (await p.locator(seletor).count().catch(() => 0)) return p;
+    }
+    await esperar(500);
+  }
+  throw new Error('Não encontrei o campo de CNPJ na janela do navegador.');
 }
 
 /**
@@ -446,6 +496,10 @@ async function rodarEmissao(context, page, ctx) {
     });
   }
 
+  // Captura o valor Total da linha do período (coluna "Total"), enquanto a
+  // tabela ainda está visível. É o valor correto a pagar do DAS.
+  const valor = await extrairValorPeriodo(page, periodoPA);
+
   // Apurar/Gerar DAS
   log('Clicando em "Apurar/Gerar DAS"...');
   await page.getByRole('button', { name: /Apurar\/Gerar DAS/i }).click();
@@ -467,9 +521,8 @@ async function rodarEmissao(context, page, ctx) {
     );
   }
 
-  // Nome e valor (informativo)
+  // Nome do contribuinte
   const nome = await extrairNome(page);
-  const valor = await extrairValor(page);
   log(`Contribuinte: ${nome || '(não identificado)'}${valor ? ` — Valor: ${valor}` : ''}`);
 
   log('Baixando o PDF da guia...');
@@ -569,17 +622,19 @@ async function extrairNome(page) {
   return (nome || '').replace(/\s+/g, ' ').trim();
 }
 
-async function extrairValor(page) {
-  const valor = await page.evaluate(() => {
-    const nodes = Array.from(document.querySelectorAll('td, span, strong, li, b'));
-    for (const n of nodes) {
-      const t = (n.textContent || '').trim();
-      const m = t.match(/R\$\s*[\d.]+,\d{2}/);
-      if (m && /total|valor/i.test((n.closest('tr, li, p, div')?.textContent) || t)) return m[0];
-    }
-    const any = document.body.innerText.match(/R\$\s*[\d.]+,\d{2}/);
-    return any ? any[0] : '';
-  });
+/**
+ * Extrai o valor Total do período na tabela de apuração. A linha do mês tem as
+ * colunas Principal, Multa, Juros e Total — pegamos o Total (4º valor R$).
+ */
+async function extrairValorPeriodo(page, periodoPA) {
+  const valor = await page.evaluate((pa) => {
+    const inp = document.querySelector(`input.paSelecionado[value="${pa}"]`);
+    const tr = inp ? inp.closest('tr') : null;
+    if (!tr) return '';
+    const vals = (tr.innerText.match(/R\$\s*[\d.]+,\d{2}/g) || []).map((v) => v.replace(/\s+/g, ' '));
+    if (vals.length >= 4) return vals[3];               // coluna Total
+    return vals.length ? vals[vals.length - 1] : '';    // fallback: último valor
+  }, periodoPA);
   return (valor || '').trim();
 }
 

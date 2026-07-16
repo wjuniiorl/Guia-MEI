@@ -77,8 +77,13 @@ Opções:
 | `--mes`, `-m`  | Mês de apuração, `1`..`12` **[obrigatório]**         |
 | `--out`, `-o`   | Diretório de saída (padrão: `./downloads`)          |
 | `--modo`        | `chrome` (padrão), `headless`, `headful`            |
+| `--auto`        | (experimental) preenche o CNPJ e clica Continuar sozinho |
 | `--novo-perfil` | Recomeça o perfil dedicado do zero                  |
 | `--help`, `-h`  | Ajuda                                               |
+
+> **`--auto`:** tenta preencher o CNPJ e clicar em Continuar automaticamente. Se
+> o hCaptcha bloquear ("Comportamento de Robô"), rode **sem** `--auto` (você faz
+> a identificação manualmente e tecla ENTER).
 
 Exemplo — DAS de **Junho/2026** (que vence em julho):
 
