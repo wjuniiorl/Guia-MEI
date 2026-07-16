@@ -228,6 +228,12 @@ async function emitirViaChromeReal(ctx) {
     '--no-first-run',
     '--no-default-browser-check',
   ];
+  // "Invisível" sem ser headless: joga a janela para fora da tela (o Chrome
+  // ignora /min, mas respeita a posição). Continua sendo um Chrome real, então
+  // passa no hCaptcha.
+  if (ctx.minimizar && !ctx.headless) {
+    args.push('--window-position=-32000,-32000', '--window-size=1200,900');
+  }
   // EXPERIMENTAL: headless costuma ser bloqueado pelo hCaptcha (impressão
   // digital de robô). Mantido como opção para o usuário testar.
   if (ctx.headless) {
