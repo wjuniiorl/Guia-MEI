@@ -814,3 +814,9 @@ async function baixarPdf(context, page, botaoImprimir, log) {
 }
 
 export { MESES_PT };
+
+// Helpers de navegador reaproveitados por outros módulos (ex.: NFS-e).
+export {
+  localizarNavegadorReal, lancarNavegadorDestacado, esperarPortaCDP, conectarCDP,
+  esperar as esperarMs, sondarHttp,
+};

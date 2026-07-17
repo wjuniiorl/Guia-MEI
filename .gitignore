@@ -1,6 +1,7 @@
 node_modules/
 downloads/
 .perfil-chromium/
+.perfil-nfse/
 dados/
 *.pdf
 _probe.mjs
