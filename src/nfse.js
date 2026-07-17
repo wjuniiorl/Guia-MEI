@@ -350,17 +350,11 @@ function nomeDoId(id) {
 }
 
 async function garantirTomadorBrasil(page) {
-  // O painel Brasil (#pnlInscricaoBrasil) costuma já estar visível. Se houver
-  // um seletor Brasil/Exterior, garante o Brasil.
-  await page.evaluate(() => {
-    const brasil = document.querySelector('#pnlInscricaoBrasil');
-    if (brasil && brasil.offsetParent === null) {
-      // tenta clicar num radio "Brasil" se existir
-      const radios = Array.from(document.querySelectorAll('input[type=radio]'));
-      const rb = radios.find((r) => /brasil/i.test(r.closest('label')?.textContent || ''));
-      if (rb) rb.click();
-    }
-  }).catch(() => {});
+  // "Onde está localizado o estabelecimento/domicílio?" vem em "Tomador não
+  // informado" (value 0). Selecionamos "Brasil" (value 1) para liberar o CPF/CNPJ.
+  await marcarRadio(page, '#Tomador_LocalDomicilio', '1').catch(() => {});
+  // Aguarda o campo do CPF/CNPJ do tomador ficar disponível.
+  await page.locator('#Tomador_Inscricao').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
 }
 
 async function clicarAvancar(page) {
