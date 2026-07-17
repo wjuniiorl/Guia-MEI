@@ -19,7 +19,7 @@ function parseArgs(argv) {
     let k = argv[i];
     if (!k.startsWith('--')) continue;
     k = k.slice(2);
-    const flags = ['so-login', 'min', 'novo-perfil'];
+    const flags = ['so-login', 'min', 'novo-perfil', 'parar-antes-emitir'];
     if (flags.includes(k)) { args[k] = true; continue; }
     const next = argv[i + 1];
     if (next !== undefined && !next.startsWith('--')) { args[k] = next; i++; }
@@ -49,6 +49,7 @@ async function main() {
       minimizar: Boolean(a.min),
       novoPerfil: Boolean(a['novo-perfil']),
       pararAposLogin: Boolean(a['so-login']),
+      pararAntesEmitir: Boolean(a['parar-antes-emitir']),
       onLog: (m) => console.log(`  › ${m}`),
     });
     console.log('\n✅', r.mensagem || 'Concluído.');

@@ -75,6 +75,15 @@ export async function emitirNFSe(opts = {}) {
     await paginaTomador(sessao.page, ctx);
     await paginaServico(sessao.page, ctx);
     await paginaValores(sessao.page, ctx);
+
+    if (opts.pararAntesEmitir) {
+      // Não clica em "Emitir" — deixa a janela aberta para você conferir os
+      // campos. Nenhuma nota é gerada. (O Chrome fica aberto; feche-o ao terminar.)
+      log('⏸️  Parado ANTES de emitir. Revise a tela do navegador. Nenhuma NFS-e foi gerada.');
+      log('    Se estiver tudo certo, rode de novo SEM --parar-antes-emitir para emitir.');
+      return { ok: true, mensagem: 'Formulário preenchido (não emitido — modo revisão).' };
+    }
+
     const resultado = await emitir(sessao.page, ctx);
     await sessao.fechar();
     return resultado;
