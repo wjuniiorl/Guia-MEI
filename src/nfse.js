@@ -216,6 +216,7 @@ async function paginaTomador(page, ctx) {
   }
 
   log('Avançando (tomador)...');
+  await fecharPopups(page);
   await page.locator('#btnAvancar').click();
   await page.waitForLoadState('domcontentloaded');
 }
@@ -363,16 +364,39 @@ async function garantirTomadorBrasil(page) {
 }
 
 async function clicarAvancar(page) {
+  await fecharPopups(page);
   const btn = page.locator('#btnAvancar, button[type="submit"]:has-text("Avançar"), button:has-text("Avançar")').first();
   await btn.waitFor({ state: 'visible', timeout: 15000 });
   await btn.click();
 }
 
 async function preencherData(page, seletor, ddmmaaaa) {
-  const el = page.locator(seletor);
-  await el.fill('');
-  await el.type(ddmmaaaa, { delay: 20 });
+  // Seta a data via JS (não abre o calendário) e força o fechamento de qualquer
+  // datepicker que esteja aberto — senão o calendário cobre e trava o formulário.
+  await page.evaluate(({ sel, val }) => {
+    const el = document.querySelector(sel);
+    if (!el) return;
+    el.value = val;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    try {
+      if (window.jQuery && window.jQuery(el).datepicker) {
+        window.jQuery(el).datepicker('update', val);
+        window.jQuery(el).datepicker('hide');
+      }
+    } catch {}
+    el.blur();
+  }, { sel: seletor, val: ddmmaaaa });
+  await fecharPopups(page);
+}
+
+/** Fecha datepickers/popovers abertos que possam cobrir e interceptar cliques. */
+async function fecharPopups(page) {
   await page.keyboard.press('Escape').catch(() => {});
+  await page.evaluate(() => {
+    document.querySelectorAll('.datepicker, .bootstrap-datetimepicker-widget, .datepicker-dropdown')
+      .forEach((d) => { d.style.display = 'none'; });
+  }).catch(() => {});
 }
 
 async function esperarPreenchido(page, seletor, timeout) {
