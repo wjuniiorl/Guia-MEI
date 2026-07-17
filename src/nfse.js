@@ -330,18 +330,29 @@ async function selecionarSelect2(page, selectId, texto, log) {
   else if (log) log(`Aviso: nenhum resultado no select2 para "${texto}".`);
 }
 
-/** Marca um radio pelo name/id e valor (lidando com o estilo custom). */
+/** Marca um radio pelo name/id e valor. Radios estilizados têm o <input>
+ * escondido — clicar no <label> que o envolve é o que dispara o comportamento. */
 async function marcarRadio(page, seletorBase, valor) {
-  // Tenta pelo input com o value exato.
-  const idBase = seletorBase.replace(/^#/, '');
-  const input = page.locator(`input[name="${nomeDoId(idBase)}"][value="${valor}"], ${seletorBase}[value="${valor}"]`).first();
-  if (await input.count()) {
-    await input.check({ force: true }).catch(async () => {
-      await input.evaluate((el) => { el.click(); });
+  const name = nomeDoId(seletorBase.replace(/^#/, ''));
+  const input = page.locator(`input[name="${name}"][value="${valor}"]`);
+  if (!(await input.count())) throw new Error(`Radio não encontrado: ${name} = ${valor}`);
+
+  const label = page.locator(`label:has(input[name="${name}"][value="${valor}"])`).first();
+  if (await label.count()) {
+    await label.scrollIntoViewIfNeeded().catch(() => {});
+    await label.click({ force: true });
+  } else {
+    await input.first().check({ force: true }).catch(async () => {
+      await input.first().evaluate((el) => el.click());
     });
-    return;
   }
-  throw new Error(`Radio não encontrado: ${seletorBase} = ${valor}`);
+  // Garante o estado e dispara os handlers do site (revelar painéis).
+  await input.first().evaluate((el) => {
+    if (!el.checked) { el.checked = true; }
+    el.dispatchEvent(new Event('click', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    if (window.jQuery) window.jQuery(el).trigger('click').trigger('change');
+  }).catch(() => {});
 }
 
 /** Converte um id ASP.NET (Tomador_Inscricao) no name (Tomador.Inscricao). */
@@ -352,9 +363,9 @@ function nomeDoId(id) {
 async function garantirTomadorBrasil(page) {
   // "Onde está localizado o estabelecimento/domicílio?" vem em "Tomador não
   // informado" (value 0). Selecionamos "Brasil" (value 1) para liberar o CPF/CNPJ.
-  await marcarRadio(page, '#Tomador_LocalDomicilio', '1').catch(() => {});
+  await marcarRadio(page, '#Tomador_LocalDomicilio', '1');
   // Aguarda o campo do CPF/CNPJ do tomador ficar disponível.
-  await page.locator('#Tomador_Inscricao').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+  await page.locator('#Tomador_Inscricao').waitFor({ state: 'visible', timeout: 12000 });
 }
 
 async function clicarAvancar(page) {
